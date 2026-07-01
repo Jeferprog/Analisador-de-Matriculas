@@ -268,6 +268,7 @@
                   <th class="px-6 py-4">ID do Lote</th>
                   <th class="px-6 py-4">Nº Matrícula</th>
                   <th class="px-6 py-4">Comarca / UF</th>
+                  <th class="px-6 py-4">Área Total</th>
                   <th class="px-6 py-4">Data Emissão Certidão</th>
                   <th class="px-6 py-4">Proprietário(s)</th>
                   <th class="px-6 py-4">CPF's / CNPJ's</th>
@@ -917,7 +918,7 @@
       if (filtered.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="9" class="p-8 text-center text-text-gray font-medium">
+            <td colspan="10" class="p-8 text-center text-text-gray font-medium">
               Nenhuma análise de matrícula encontrada na base de dados.
             </td>
           </tr>
@@ -941,6 +942,7 @@
           <td class="px-6 py-4 font-mono font-bold text-primary-green align-top">#${esc(item.id || '—')}</td>
           <td class="px-6 py-4 font-semibold text-text-dark align-top whitespace-nowrap">${esc(imo.matricula || '—')}</td>
           <td class="px-6 py-4 text-text-dark align-top">${esc(imo.comarca || '—')}</td>
+          <td class="px-6 py-4 text-text-dark align-top whitespace-nowrap">${esc(imo.area || '—')}</td>
           <td class="px-6 py-4 text-text-gray text-xs align-top whitespace-nowrap">${esc(imo.dataEmissaoCertidao || '—')}</td>
           <td class="px-6 py-4 text-text-dark align-top">${nomes}</td>
           <td class="px-6 py-4 font-mono text-xs text-text-gray align-top">${docs}</td>
