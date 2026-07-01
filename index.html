@@ -455,6 +455,7 @@
                       <th class="px-4 py-3">Nome do Titular</th>
                       <th class="px-4 py-3">CPF / CNPJ</th>
                       <th class="px-4 py-3">Fração Ideal</th>
+                      <th class="px-4 py-3">Estado Civil</th>
                       <th class="px-4 py-3">Situação Cadastral</th>
                     </tr>
                   </thead>
@@ -471,35 +472,111 @@
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
                 <div class="space-y-3 bg-bg-body p-4 rounded-lg">
                   <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Cartório / Ofício</span>
+                    <p id="info-cartorio" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Comarca</span>
                     <p id="info-comarca" class="font-semibold text-text-dark"></p>
                   </div>
                   <div>
-                    <span class="text-xs text-text-gray uppercase font-bold">Área Declarada</span>
-                    <p id="info-area" class="font-semibold text-text-dark"></p>
+                    <span class="text-xs text-text-gray uppercase font-bold">Tipo do Imóvel</span>
+                    <p id="info-tipo" class="font-semibold text-text-dark"></p>
                   </div>
                   <div>
-                    <span class="text-xs text-text-gray uppercase font-bold">Endereço de Matrícula</span>
-                    <p id="info-endereco" class="font-semibold text-text-dark"></p>
+                    <span class="text-xs text-text-gray uppercase font-bold">Data de Emissão da Certidão</span>
+                    <p id="info-data-emissao" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div id="info-incra-wrap" class="hidden">
+                    <span class="text-xs text-text-gray uppercase font-bold">Cadastro INCRA / CCIR</span>
+                    <p id="info-incra" class="font-semibold text-text-dark"></p>
                   </div>
                 </div>
                 <div class="space-y-3 bg-bg-body p-4 rounded-lg">
                   <div>
-                    <span class="text-xs text-text-gray uppercase font-bold">Descrição da Matrícula</span>
-                    <p id="info-descricao" class="text-text-dark leading-relaxed text-xs"></p>
+                    <span class="text-xs text-text-gray uppercase font-bold">Área Total do Terreno</span>
+                    <p id="info-area" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Área Construída / Benfeitorias</span>
+                    <p id="info-area-construida" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Endereço / Localização</span>
+                    <p id="info-endereco" class="font-semibold text-text-dark"></p>
                   </div>
                 </div>
+              </div>
+
+              <!-- Confrontações -->
+              <div id="info-confrontacoes-wrap" class="hidden bg-white border border-border-gray rounded-lg overflow-hidden">
+                <div class="px-4 py-3 border-b border-border-gray bg-bg-body">
+                  <span class="text-xs text-primary-green uppercase font-bold">Tabela de Confrontações (Perímetro)</span>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead class="text-text-dark font-bold border-b border-border-gray">
+                      <tr>
+                        <th class="px-4 py-2">Posição</th>
+                        <th class="px-4 py-2">Confrontante / Vizinho</th>
+                        <th class="px-4 py-2">Medida</th>
+                      </tr>
+                    </thead>
+                    <tbody id="info-confrontacoes-tbody" class="divide-y divide-border-gray"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="bg-bg-body p-4 rounded-lg">
+                <span class="text-xs text-text-gray uppercase font-bold">Descrição da Matrícula</span>
+                <p id="info-descricao" class="text-text-dark leading-relaxed text-xs mt-1"></p>
+              </div>
+
+              <!-- Descrição Legal (minuta) -->
+              <div id="info-descricao-legal-wrap" class="hidden bg-primary-green/5 border border-primary-green/10 p-4 rounded-lg">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs text-primary-green uppercase font-bold">Descrição Legal (pronta para contrato)</span>
+                  <button onclick="copyDescricaoLegal()" class="text-[10px] font-bold text-primary-green hover:underline flex items-center gap-1">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar
+                  </button>
+                </div>
+                <p id="info-descricao-legal" class="text-text-dark leading-relaxed text-xs whitespace-pre-line"></p>
               </div>
             </div>
 
             <!-- Tab Contents: Alertas -->
-            <div id="tab-content-alertas" class="hidden space-y-4">
-              <h4 class="font-bold text-sm text-danger-red uppercase mb-3 flex items-center gap-2">
-                <i data-lucide="shield-alert" class="w-5 h-5 text-accent-orange"></i>
-                Gravames e Alertas Identificados pela IA
-              </h4>
-              <div id="detail-alertas-list" class="space-y-3">
-                <!-- Dinâmico -->
+            <div id="tab-content-alertas" class="hidden space-y-5">
+
+              <!-- Ônus e Gravames registrados -->
+              <div>
+                <h4 class="font-bold text-sm text-primary-green uppercase mb-3 flex items-center gap-2">
+                  <i data-lucide="scale" class="w-4.5 h-4.5 text-accent-orange"></i>
+                  Situação Jurídica: Ônus e Gravames Registrados
+                </h4>
+                <div id="detail-gravames-wrap" class="overflow-x-auto border border-border-gray rounded-lg">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead class="bg-bg-body text-text-dark font-bold border-b border-border-gray">
+                      <tr>
+                        <th class="px-4 py-3">Registro (R/AV)</th>
+                        <th class="px-4 py-3">Tipo de Gravame</th>
+                        <th class="px-4 py-3">Credor / Beneficiário</th>
+                        <th class="px-4 py-3">Vencimento / Obs.</th>
+                      </tr>
+                    </thead>
+                    <tbody id="detail-gravames-tbody" class="divide-y divide-border-gray"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Alertas de risco/compliance -->
+              <div>
+                <h4 class="font-bold text-sm text-danger-red uppercase mb-3 flex items-center gap-2">
+                  <i data-lucide="shield-alert" class="w-5 h-5 text-accent-orange"></i>
+                  Alertas de Risco e Compliance Identificados pela IA
+                </h4>
+                <div id="detail-alertas-list" class="space-y-3">
+                  <!-- Dinâmico -->
+                </div>
               </div>
             </div>
 
@@ -934,19 +1011,78 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
               <td class="px-4 py-3 font-semibold text-text-dark">${p.nome}</td>
               <td class="px-4 py-3 font-mono">${p.documento || 'Não informado'}</td>
               <td class="px-4 py-3">${p.participacao || '100%'}</td>
+              <td class="px-4 py-3">${p.estadoCivil || '—'}</td>
               <td class="px-4 py-3 font-bold ${sColor}">${p.status}</td>
             </tr>
           `;
         });
       } else {
-        pTbody.innerHTML = `<tr><td colspan="4" class="px-4 py-3 text-center text-text-gray">Nenhum proprietário listado.</td></tr>`;
+        pTbody.innerHTML = `<tr><td colspan="5" class="px-4 py-3 text-center text-text-gray">Nenhum proprietário listado.</td></tr>`;
       }
 
       // Tab: Imovel Info
-      document.getElementById('info-comarca').innerText = item.imovel.comarca;
-      document.getElementById('info-area').innerText = item.imovel.area;
-      document.getElementById('info-endereco').innerText = item.imovel.endereco;
-      document.getElementById('info-descricao').innerText = item.imovel.descricaoCurta;
+      const imo = item.imovel || {};
+      document.getElementById('info-cartorio').innerText = imo.cartorio || '—';
+      document.getElementById('info-comarca').innerText = imo.comarca || '—';
+      document.getElementById('info-tipo').innerText = imo.tipo || '—';
+      document.getElementById('info-data-emissao').innerText = imo.dataEmissaoCertidao || '—';
+      document.getElementById('info-area').innerText = imo.area || '—';
+      document.getElementById('info-area-construida').innerText = imo.areaConstruida || '—';
+      document.getElementById('info-endereco').innerText = imo.endereco || '—';
+      document.getElementById('info-descricao').innerText = imo.descricaoCurta || '—';
+
+      // INCRA (só rural)
+      const incraWrap = document.getElementById('info-incra-wrap');
+      if (imo.cadastroIncra) {
+        document.getElementById('info-incra').innerText = imo.cadastroIncra;
+        incraWrap.classList.remove('hidden');
+      } else {
+        incraWrap.classList.add('hidden');
+      }
+
+      // Confrontações
+      const confWrap = document.getElementById('info-confrontacoes-wrap');
+      const confTbody = document.getElementById('info-confrontacoes-tbody');
+      confTbody.innerHTML = '';
+      if (imo.confrontacoes && imo.confrontacoes.length > 0) {
+        imo.confrontacoes.forEach(c => {
+          confTbody.innerHTML += `
+            <tr>
+              <td class="px-4 py-2 font-semibold text-text-dark">${c.posicao || '—'}</td>
+              <td class="px-4 py-2">${c.confrontante || '—'}</td>
+              <td class="px-4 py-2">${c.medida || 'Não informada'}</td>
+            </tr>`;
+        });
+        confWrap.classList.remove('hidden');
+      } else {
+        confWrap.classList.add('hidden');
+      }
+
+      // Descrição legal (minuta)
+      const legalWrap = document.getElementById('info-descricao-legal-wrap');
+      if (imo.descricaoLegal) {
+        document.getElementById('info-descricao-legal').innerText = imo.descricaoLegal;
+        legalWrap.classList.remove('hidden');
+      } else {
+        legalWrap.classList.add('hidden');
+      }
+
+      // Tab: Gravames (ônus reais registrados)
+      const gTbody = document.getElementById('detail-gravames-tbody');
+      gTbody.innerHTML = '';
+      if (item.gravames && item.gravames.length > 0) {
+        item.gravames.forEach(g => {
+          gTbody.innerHTML += `
+            <tr>
+              <td class="px-4 py-3 font-mono font-bold text-text-dark">${g.registro || '—'}</td>
+              <td class="px-4 py-3 text-danger-red font-semibold">${g.tipo || '—'}</td>
+              <td class="px-4 py-3">${g.credor || '—'}</td>
+              <td class="px-4 py-3 text-text-gray">${g.observacao || '—'}</td>
+            </tr>`;
+        });
+      } else {
+        gTbody.innerHTML = `<tr><td colspan="4" class="px-4 py-3 text-center text-success-green font-bold">Livre de ônus — nenhum gravame ativo registrado.</td></tr>`;
+      }
 
       // Tab: Alertas
       const alertsDiv = document.getElementById('detail-alertas-list');
@@ -1199,6 +1335,19 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
           hideLoading();
           showToast("success", "Simulação: Lote removido!");
         }, 800);
+      }
+    }
+
+    // Copia a descrição legal (minuta) para a área de transferência
+    function copyDescricaoLegal() {
+      const texto = document.getElementById('info-descricao-legal').innerText || '';
+      if (!texto) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto)
+          .then(() => showToast("success", "Descrição legal copiada para a área de transferência!"))
+          .catch(() => showToast("error", "Não foi possível copiar automaticamente."));
+      } else {
+        showToast("error", "Cópia automática indisponível neste navegador.");
       }
     }
 

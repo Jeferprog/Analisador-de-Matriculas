@@ -111,12 +111,12 @@ function inicializarPlanilha(url, abaPrincipalName, abaAlertasName) {
   }
   if (sheetPrincipal.getLastRow() === 0) {
     sheetPrincipal.appendRow([
-      'Lote ID', 'Data e Hora', 'Arquivo', 'Comarca', 'Nº Matrícula', 
-      'Área', 'Endereço', 'Valor Estimado', 'Risco Geral', 'Rating', 
-      'Proprietários', 'Status de Liberação', 'Parecer Consolidado'
+      'Lote ID', 'Data e Hora', 'Arquivo', 'Comarca', 'Nº Matrícula',
+      'Área', 'Endereço', 'Valor Estimado', 'Risco Geral', 'Rating',
+      'Proprietários', 'Status de Liberação', 'Parecer Consolidado', 'Dados Completos (JSON)'
     ]);
     // Formatação do Cabeçalho (Verde Cresol institucional)
-    const headerRange = sheetPrincipal.getRange(1, 1, 1, 13);
+    const headerRange = sheetPrincipal.getRange(1, 1, 1, 14);
     headerRange.setBackground('#005c46')
                .setFontColor('#ffffff')
                .setFontWeight('bold')
@@ -185,8 +185,21 @@ function listarAnalises() {
           const list = [];
           for (let i = rows.length - 1; i >= 1; i--) {
             const row = rows[i];
-            
-            // Decodifica proprietários para exibir na lista
+
+            // Preferência: reidrata o objeto completo salvo na coluna "Dados Completos (JSON)"
+            if (row[13]) {
+              try {
+                const full = JSON.parse(row[13]);
+                if (full && full.id) {
+                  list.push(full);
+                  continue;
+                }
+              } catch (e) {
+                // JSON inválido: cai na reconstrução parcial abaixo
+              }
+            }
+
+            // Fallback (linhas antigas sem a coluna de JSON completo)
             let props = [];
             try {
               props = JSON.parse(row[10]);
@@ -211,6 +224,7 @@ function listarAnalises() {
                 descricaoCurta: 'Recuperado do histórico oficial de planilhas.'
               },
               proprietarios: props,
+              gravames: [],
               alertas: [], // Detalhes de alertas podem ser lidos da segunda aba se necessário
               cadeiaDominial: [],
               parecerConsolidado: row[12]
@@ -327,12 +341,13 @@ function exportarParaSheets(analysisId) {
       target.imovel.rating,
       JSON.stringify(target.proprietarios),
       target.status,
-      target.parecerConsolidado
+      target.parecerConsolidado,
+      JSON.stringify(target) // Dados completos para round-trip sem perda (confrontações, gravames, descrição legal, etc.)
     ];
-    
+
     if (rowIndexToUpdate > -1) {
       // Atualiza linha existente
-      sheetPrincipal.getRange(rowIndexToUpdate, 1, 1, 13).setValues([rowData]);
+      sheetPrincipal.getRange(rowIndexToUpdate, 1, 1, rowData.length).setValues([rowData]);
     } else {
       // Adiciona nova linha
       sheetPrincipal.appendRow(rowData);
@@ -566,23 +581,43 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
   try {
     const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey;
 
-    let systemInstructionText = "Você é o Analista Sênior de Registros Públicos e Direito Imobiliário da cooperativa Cresol. Sua missão de alta responsabilidade é examinar detalhadamente documentos de matrículas de imóveis, interpretando a linguagem técnica registral e notarial, rastreando proprietários anteriores e atuais (cadeia dominial) com suas respectivas participações, e identificando rigorosamente quaisquer restrições de crédito ou gravames (penhoras judiciais, alienações fiduciárias ativas ou baixadas, indisponibilidades de bens, hipotecas, servidões ou usufrutos). Com base na sua análise técnica profunda, classifique o risco fiduciário do bem como garantia (de AAA+ a D), descreva alertas claros e consolide seu parecer técnico de elegibilidade jurídica.\n\nLEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF com texto nativo, como PDF digitalizado ou como FOTOGRAFIA da matrícula original (inclusive tortas, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral do documento, lendo todos os registros (R-) e averbações (AV-) na ordem em que aparecem, mesmo em imagens de qualidade ruim. NUNCA invente dados: se um campo estiver ilegível ou ausente, preencha com 'Não identificado' e registre a ilegibilidade como um alerta do tipo ATENÇÃO. Baseie o parecer estritamente no que consta no documento fornecido.";
-    
-    let prompt = "Por favor, faça uma análise técnica jurídica profunda desta matrícula imobiliária (PDF, imagem ou transcrição). Extraia os dados e retorne estritamente um objeto JSON válido no formato solicitado, sem textos introdutórios ou adicionais.\n\n" +
+    let systemInstructionText =
+      "Você é o Analista Sênior de Registros Públicos e Direito Imobiliário da cooperativa Cresol. Sua missão de alta responsabilidade é examinar detalhadamente matrículas de imóveis, interpretando a linguagem técnica registral e notarial, rastreando a cadeia dominial (proprietários anteriores e atuais) com suas participações, e identificando rigorosamente restrições de crédito e gravames (penhoras, alienações fiduciárias ativas ou baixadas, indisponibilidades de bens, hipotecas, servidões, usufrutos, arresto, arrolamento). Ao final, classifique o risco fiduciário do bem como garantia (de AAA+ a D) e consolide um parecer técnico de elegibilidade jurídica para crédito.\n\n" +
+      "METODOLOGIA DE VALIDAÇÃO CRUZADA (aplique internamente antes de responder):\n" +
+      "1. Extração registral: transcreva Matrícula, Ofício/Cartório e Comarca, tipo do imóvel (urbano/rural/gleba), endereço/localização, área total e área construída, Cadastro INCRA/CCIR quando rural, e a data/hora de emissão da certidão.\n" +
+      "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta.\n" +
+      "3. Qualificação subjetiva: identifique todos os proprietários/fiduciantes com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
+      "4. Ônus e gravames: liste cada gravame ativo com o registro (R-/AV-), o tipo, o credor/beneficiário e observação/vencimento. Se estiver livre e desembaraçado, declare isso explicitamente.\n" +
+      "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n\n" +
+      "LEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF nativo, PDF digitalizado ou FOTOGRAFIA da matrícula (torta, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral, lendo todos os R- e AV- na ordem. NUNCA invente dados: se um campo estiver ilegível ou ausente, use 'Não identificado' e registre a ilegibilidade como alerta do tipo ATENÇÃO. Baseie-se estritamente no documento fornecido.";
+
+    let prompt = "Faça a análise técnica jurídica profunda desta matrícula imobiliária (PDF, imagem ou transcrição) aplicando a metodologia de validação cruzada. Retorne ESTRITAMENTE um objeto JSON válido no formato abaixo, sem texto fora do JSON.\n\n" +
                  "FORMATO JSON SOLICITADO:\n" +
                  "{\n" +
                  "  \"imovel\": {\n" +
                  "    \"matricula\": \"string\",\n" +
-                 "    \"comarca\": \"string\",\n" +
-                 "    \"valor\": \"string (Valor estimado)\",\n" +
+                 "    \"cartorio\": \"string (Ofício/Registro de Imóveis)\",\n" +
+                 "    \"comarca\": \"string (Comarca - UF)\",\n" +
+                 "    \"tipo\": \"string (Ex: Gleba Rural, Apartamento, Galpão)\",\n" +
+                 "    \"dataEmissaoCertidao\": \"string (data e hora de emissão da certidão, se constar)\",\n" +
+                 "    \"cadastroIncra\": \"string (INCRA/CCIR se rural, senão vazio)\",\n" +
+                 "    \"valor\": \"string (Valor estimado de mercado)\",\n" +
                  "    \"risco\": \"string (Ex: 3.5/10)\",\n" +
                  "    \"rating\": \"string (AAA+ a D)\",\n" +
                  "    \"endereco\": \"string\",\n" +
-                 "    \"area\": \"string\",\n" +
-                 "    \"descricaoCurta\": \"string\"\n" +
+                 "    \"area\": \"string (área total do terreno)\",\n" +
+                 "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
+                 "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
+                 "    \"descricaoLegal\": \"string (descritivo legal completo e atualizado, pronto para contrato)\",\n" +
+                 "    \"confrontacoes\": [\n" +
+                 "      { \"posicao\": \"Norte|Sul|Leste|Oeste\", \"confrontante\": \"string\", \"medida\": \"string\" }\n" +
+                 "    ]\n" +
                  "  },\n" +
                  "  \"proprietarios\": [\n" +
-                 "    { \"nome\": \"string\", \"documento\": \"string\", \"participacao\": \"string\", \"status\": \"REGULAR|HISTÓRICO|ATENÇÃO\" }\n" +
+                 "    { \"nome\": \"string\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"estadoCivil\": \"string\", \"status\": \"REGULAR|HISTÓRICO|ATENÇÃO\" }\n" +
+                 "  ],\n" +
+                 "  \"gravames\": [\n" +
+                 "    { \"registro\": \"string (R-/AV-)\", \"tipo\": \"string\", \"credor\": \"string\", \"observacao\": \"string (vencimento/obs)\" }\n" +
                  "  ],\n" +
                  "  \"alertas\": [\n" +
                  "    { \"titulo\": \"string\", \"descricao\": \"string\", \"tipo\": \"CRÍTICO|ATENÇÃO|INFORMAÇÃO\" }\n" +
@@ -590,9 +625,10 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "  \"cadeiaDominial\": [\n" +
                  "    { \"data\": \"string\", \"tipoTransacao\": \"string\", \"adquirente\": \"string\", \"transmitente\": \"string\", \"registro\": \"string\", \"detalhes\": \"string\" }\n" +
                  "  ],\n" +
-                 "  \"parecerConsolidado\": \"string (Laudo final de elegibilidade jurídica recomendando ou não a aceitação de garantia creditícia)\",\n" +
+                 "  \"parecerConsolidado\": \"string (Laudo final de elegibilidade jurídica, incluindo a auditoria de área e as ressalvas de qualificação subjetiva, recomendando ou não a aceitação de garantia creditícia)\",\n" +
                  "  \"status\": \"LIBERADO|EM REVISÃO|REJEITADO\"\n" +
                  "}\n\n" +
+                 "Regras: gravames traz apenas ônus reais registrados; se não houver, retorne lista vazia e declare 'livre de ônus' no parecer. alertas traz avisos de risco/compliance (ex.: CPF faltante, divergência de área, ilegibilidade). Use 'Não identificado' para campos ausentes.\n\n" +
                  "NOME DO ARQUIVO: " + name + "\n" +
                  "CONTEÚDO DA MATRÍCULA:\n" + textInput;
                   
@@ -690,15 +726,23 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       metodo: selectedMetodo,
       imovel: {
         matricula: imovelSafe.matricula || "Não identificado",
+        cartorio: imovelSafe.cartorio || "Não identificado",
         comarca: imovelSafe.comarca || "Não identificado",
+        tipo: imovelSafe.tipo || "Não identificado",
+        dataEmissaoCertidao: imovelSafe.dataEmissaoCertidao || "Não identificada",
+        cadastroIncra: imovelSafe.cadastroIncra || "",
         valor: imovelSafe.valor || "Não avaliado",
         risco: imovelSafe.risco || "N/D",
         rating: imovelSafe.rating || "N/D",
         endereco: imovelSafe.endereco || "Não identificado",
         area: imovelSafe.area || "Não identificado",
-        descricaoCurta: imovelSafe.descricaoCurta || "Descrição não extraída do documento."
+        areaConstruida: imovelSafe.areaConstruida || "Não mensurada",
+        descricaoCurta: imovelSafe.descricaoCurta || "Descrição não extraída do documento.",
+        descricaoLegal: imovelSafe.descricaoLegal || "",
+        confrontacoes: imovelSafe.confrontacoes || []
       },
       proprietarios: parsedData.proprietarios || [],
+      gravames: parsedData.gravames || [],
       alertas: parsedData.alertas || [],
       cadeiaDominial: parsedData.cadeiaDominial || [],
       parecerConsolidado: parsedData.parecerConsolidado || "Análise concluída sem parecer textual.",
