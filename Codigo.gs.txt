@@ -502,6 +502,57 @@ function valorVazio(v) {
 }
 
 /**
+ * Extrai a soma de áreas (em m²) mencionadas em um texto, convertendo hectares para m².
+ * Reconhece formato brasileiro (43.425,25 m²) e unidades m²/m2/ha/hectare(s).
+ */
+function extrairAreaM2(texto) {
+  if (!texto) return 0;
+  const re = /([\d.]+(?:,\d+)?)\s*(m²|m2|metros?\s*quadrados?|hectares?|ha)/gi;
+  let total = 0, m;
+  while ((m = re.exec(String(texto))) !== null) {
+    let num = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+    if (isNaN(num)) continue;
+    const unidade = m[2].toLowerCase();
+    if (unidade === 'ha' || unidade.indexOf('hectare') > -1) num = num * 10000; // hectare -> m²
+    total += num;
+  }
+  return total;
+}
+
+/**
+ * Formata uma área em m² no padrão brasileiro (ex.: 178.304,90 m²).
+ */
+function formatarAreaM2(m2) {
+  const val = Math.round(m2 * 100) / 100;
+  const inteiro = Math.floor(val);
+  const dec = Math.round((val - inteiro) * 100);
+  const decStr = dec < 10 ? ('0' + dec) : ('' + dec);
+  const intStr = String(inteiro).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return intStr + ',' + decStr + ' m²';
+}
+
+/**
+ * Reforço: se a área total do imóvel não veio, tenta deduzi-la somando as áreas das
+ * frações ideais dos proprietários (ex.: coproprietários com áreas delimitadas).
+ * Só preenche quando há áreas explícitas por proprietário — evita cálculos incorretos.
+ */
+function preencherAreaTotal(analysis) {
+  const imo = analysis.imovel || {};
+  if (!valorVazio(imo.area)) return analysis; // já tem área total
+
+  let somaM2 = 0;
+  (analysis.proprietarios || []).forEach(function(p) {
+    somaM2 += extrairAreaM2(p && p.participacao);
+  });
+
+  if (somaM2 > 0) {
+    imo.area = formatarAreaM2(somaM2) + ' (somado das frações)';
+    analysis.imovel = imo;
+  }
+  return analysis;
+}
+
+/**
  * Mescla uma nova análise em uma existente da MESMA matrícula:
  * preenche campos vazios e acrescenta apenas itens novos das listas (sem duplicar).
  */
@@ -554,10 +605,12 @@ function autoExportar(id) {
  * informações novas ao registro existente. Retorna o objeto efetivamente salvo.
  */
 function registrarOuMesclar(finalResult) {
+  preencherAreaTotal(finalResult); // deduz a área total se não veio da IA
   const list = listarAnalises();
   for (let i = 0; i < list.length; i++) {
     if (list[i] && mesmaMatricula(list[i], finalResult)) {
       const merged = mesclarAnalises(list[i], finalResult);
+      preencherAreaTotal(merged); // após mesclar frações, tenta completar o total
       list[i] = merged;
       salvarBancoLocal(list);
       autoExportar(merged.id);
@@ -593,7 +646,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "Você é o Analista Sênior de Registros Públicos e Direito Imobiliário da cooperativa Cresol. Sua missão de alta responsabilidade é examinar detalhadamente matrículas de imóveis, interpretando a linguagem técnica registral e notarial, rastreando a cadeia dominial (proprietários anteriores e atuais) com suas participações, e identificando rigorosamente restrições de crédito e gravames (penhoras, alienações fiduciárias ativas ou baixadas, indisponibilidades de bens, hipotecas, servidões, usufrutos, arresto, arrolamento). Ao final, classifique o risco fiduciário do bem como garantia (de AAA+ a D) e consolide um parecer técnico de elegibilidade jurídica para crédito.\n\n" +
       "METODOLOGIA DE VALIDAÇÃO CRUZADA (aplique internamente antes de responder):\n" +
       "1. Extração registral: transcreva Matrícula, Ofício/Cartório e Comarca, tipo do imóvel (urbano/rural/gleba), endereço/localização, área total e área construída, Cadastro INCRA/CCIR quando rural, e a data/hora de emissão da certidão.\n" +
-      "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta.\n" +
+      "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta. IMPORTANTE: a área total NUNCA deve ficar vazia — se o documento não trouxer o total de forma explícita, calcule-o somando as áreas das frações dos proprietários (imóvel de marido e esposa/coproprietários = 100% da área) e preencha o campo 'area'.\n" +
       "3. Qualificação subjetiva: identifique todos os proprietários/fiduciantes com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
       "4. Ônus e gravames: liste cada gravame ativo com o registro (R-/AV-), o tipo, o credor/beneficiário e observação/vencimento. Se estiver livre e desembaraçado, declare isso explicitamente.\n" +
       "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n\n" +
@@ -613,7 +666,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    \"risco\": \"string (Ex: 3.5/10)\",\n" +
                  "    \"rating\": \"string (AAA+ a D)\",\n" +
                  "    \"endereco\": \"string\",\n" +
-                 "    \"area\": \"string (área total do terreno)\",\n" +
+                 "    \"area\": \"string (área TOTAL do terreno/imóvel = 100%; se não houver total explícito, some as áreas das frações dos proprietários. Nunca deixe vazio)\",\n" +
                  "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
                  "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
                  "    \"descricaoLegal\": \"string (descritivo legal completo e atualizado, pronto para contrato)\",\n" +
