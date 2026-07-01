@@ -721,12 +721,14 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(data) {
-            analyses = data;
+            analyses = Array.isArray(data) ? data : [];
             loadConfigData();
           })
           .withFailureHandler(function(err) {
-            hideLoading();
+            // Mesmo com falha, segue para carregar config e liberar a interface
+            analyses = [];
             showToast("error", "Erro ao carregar dados do Apps Script: " + err);
+            loadConfigData();
           })
           .listarAnalises();
       } else {
@@ -767,22 +769,30 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(conf) {
-            config = conf;
-            applyConfigToUI();
-            renderTable();
-            updateKPIs();
-            hideLoading();
+            if (conf) config = conf;
+            finishInitialRender();
           })
           .withFailureHandler(function(err) {
-            hideLoading();
             showToast("error", "Erro ao carregar configurações: " + err);
+            finishInitialRender();
           })
           .getSystemConfig();
       } else {
-        hideLoading();
+        finishInitialRender();
+      }
+    }
+
+    // Renderiza a interface inicial garantindo que o loader SEMPRE seja escondido,
+    // mesmo que alguma função de render lance exceção (evita a tela travada).
+    function finishInitialRender() {
+      try {
         applyConfigToUI();
         renderTable();
         updateKPIs();
+      } catch (e) {
+        showToast("error", "Falha ao montar a interface: " + (e && e.message ? e.message : e));
+      } finally {
+        hideLoading();
       }
     }
 
@@ -897,10 +907,11 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
 
     // Calculate metrics
     function updateKPIs() {
+      if (!Array.isArray(analyses)) analyses = [];
       document.getElementById('kpi-total').innerText = analyses.length;
-      document.getElementById('kpi-revisao').innerText = analyses.filter(a => a.status === 'EM REVISÃO').length;
-      document.getElementById('kpi-rejeitados').innerText = analyses.filter(a => a.status === 'REJEITADO').length;
-      document.getElementById('kpi-sheets').innerText = config.spreadsheetUrl ? analyses.length : "0";
+      document.getElementById('kpi-revisao').innerText = analyses.filter(a => a && a.status === 'EM REVISÃO').length;
+      document.getElementById('kpi-rejeitados').innerText = analyses.filter(a => a && a.status === 'REJEITADO').length;
+      document.getElementById('kpi-sheets').innerText = (config && config.spreadsheetUrl) ? analyses.length : "0";
     }
 
     // Render tabular records
@@ -908,15 +919,19 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       const tbody = document.getElementById('analyses-table-body');
       tbody.innerHTML = '';
 
+      if (!Array.isArray(analyses)) analyses = [];
       const query = document.getElementById('search-input').value.toLowerCase();
       const statusFilter = document.getElementById('status-filter').value;
 
       const filtered = analyses.filter(item => {
+        if (!item) return false;
+        const imo = item.imovel || {};
+        const props = Array.isArray(item.proprietarios) ? item.proprietarios : [];
         const matchesStatus = statusFilter === 'TODOS' || item.status === statusFilter;
-        const matchesSearch = item.id.toLowerCase().includes(query) ||
-                              item.imovel.comarca.toLowerCase().includes(query) ||
-                              item.imovel.endereco.toLowerCase().includes(query) ||
-                              item.proprietarios.some(p => p.nome.toLowerCase().includes(query));
+        const matchesSearch = String(item.id || '').toLowerCase().includes(query) ||
+                              String(imo.comarca || '').toLowerCase().includes(query) ||
+                              String(imo.endereco || '').toLowerCase().includes(query) ||
+                              props.some(p => p && String(p.nome || '').toLowerCase().includes(query));
         return matchesStatus && matchesSearch;
       });
 
@@ -938,21 +953,25 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
         tr.className = "hover:bg-primary-green/5 cursor-pointer transition-colors";
         tr.onclick = () => openAnalysis(item);
 
-        const badgeClass = item.status === 'LIBERADO' 
-          ? 'bg-success-green/10 text-success-green border border-success-green/20' 
-          : item.status === 'EM REVISÃO' 
-          ? 'bg-accent-orange/10 text-accent-orange border border-accent-orange/20' 
+        const imo = item.imovel || {};
+        let dataFmt = '—';
+        try { dataFmt = item.timestamp ? new Date(item.timestamp).toLocaleString('pt-BR') : '—'; } catch (e) { dataFmt = String(item.timestamp || '—'); }
+
+        const badgeClass = item.status === 'LIBERADO'
+          ? 'bg-success-green/10 text-success-green border border-success-green/20'
+          : item.status === 'EM REVISÃO'
+          ? 'bg-accent-orange/10 text-accent-orange border border-accent-orange/20'
           : 'bg-danger-red/10 text-danger-red border border-danger-red/20';
 
         tr.innerHTML = `
-          <td class="px-6 py-4 font-mono font-bold text-primary-green">#${item.id}</td>
-          <td class="px-6 py-4 text-text-gray text-xs whitespace-nowrap">${new Date(item.timestamp).toLocaleString('pt-BR')}</td>
-          <td class="px-6 py-4 text-text-dark font-medium">${item.nomeArquivo}</td>
-          <td class="px-6 py-4 text-text-dark">${item.imovel.comarca}</td>
-          <td class="px-6 py-4 font-semibold text-text-dark whitespace-nowrap">${item.imovel.valor}</td>
+          <td class="px-6 py-4 font-mono font-bold text-primary-green">#${item.id || '—'}</td>
+          <td class="px-6 py-4 text-text-gray text-xs whitespace-nowrap">${dataFmt}</td>
+          <td class="px-6 py-4 text-text-dark font-medium">${item.nomeArquivo || '—'}</td>
+          <td class="px-6 py-4 text-text-dark">${imo.comarca || '—'}</td>
+          <td class="px-6 py-4 font-semibold text-text-dark whitespace-nowrap">${imo.valor || '—'}</td>
           <td class="px-6 py-4 whitespace-nowrap">
-            <strong class="text-text-dark">${item.imovel.risco}</strong>
-            <span class="text-[10px] text-text-gray ml-1 bg-bg-body px-1 rounded border">${item.imovel.rating}</span>
+            <strong class="text-text-dark">${imo.risco || '—'}</strong>
+            <span class="text-[10px] text-text-gray ml-1 bg-bg-body px-1 rounded border">${imo.rating || '—'}</span>
           </td>
           <td class="px-6 py-4 text-center whitespace-nowrap">
             <span class="px-3 py-1 rounded-full text-[10px] font-black tracking-wider ${badgeClass}">
@@ -1374,12 +1393,20 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       }, 5000);
     }
 
+    let loadingWatchdog = null;
     function showLoading(msg) {
       document.getElementById('loading-message').innerText = msg;
       document.getElementById('loading-screen').classList.remove('hidden');
+      // Rede de segurança: nunca deixa o loader preso indefinidamente
+      if (loadingWatchdog) clearTimeout(loadingWatchdog);
+      loadingWatchdog = setTimeout(function() {
+        document.getElementById('loading-screen').classList.add('hidden');
+        showToast("error", "A operação demorou mais que o esperado. Verifique a conexão/autorização do Apps Script e tente novamente.");
+      }, 25000);
     }
 
     function hideLoading() {
+      if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
       document.getElementById('loading-screen').classList.add('hidden');
     }
   </script>
