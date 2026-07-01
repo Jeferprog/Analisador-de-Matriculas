@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+
+<html class="light" lang="pt-br"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Cresol Real Estate Intelligence - Portal Integrado</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "primary": "#005c46", // Verde Cresol
+                "secondary": "#f58220", // Laranja Cresol
+                "primary-container": "#005c46",
+                "on-surface": "#1b1c1c",
+                "text-muted": "#666666",
+                "surface-bright": "#fbf9f8",
+                "surface-variant": "#e4e2e1",
+                "on-primary": "#ffffff",
+                "background": "#fbf9f8",
+                "border-subtle": "#e0e0e0",
+                "surface-container": "#f0eded",
+                "surface-container-low": "#f6f3f2",
+                "surface-container-highest": "#e4e2e1",
+                "outline": "#6f7974",
+                "error": "#ba1a1a"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+            },
+            "spacing": {
+                "margin-desktop": "2rem",
+                "stack-lg": "2rem",
+                "container-max": "1250px",
+                "gutter": "1.5rem",
+                "stack-md": "1rem",
+                "stack-sm": "0.5rem"
+            },
+            "fontFamily": {
+                "body-md": ["Roboto"],
+                "headline-md": ["Roboto"],
+                "headline-lg": ["Roboto"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .view-section { display: none; }
+        .view-section.active { display: block; }
+        .zebra-stripe tr:nth-child(even) { background-color: #f8f9fa; }
+        .custom-shadow { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); }
+        .nav-link-active { 
+            border-bottom: 2px solid #f58220; 
+            color: #005c46 !important; 
+            font-weight: bold;
+        }
+        .sidebar-link-active {
+            background-color: #f58220 !important;
+            color: white !important;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md">
+<!-- TopNavBar -->
+<header class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-border-subtle h-16 w-full">
+<div class="flex justify-between items-center px-margin-desktop h-full w-full max-w-container-max mx-auto">
+<div class="flex items-center gap-4">
+<span class="font-headline-md text-headline-md font-bold text-primary">Cresol Real Estate</span>
+<span class="bg-secondary/10 text-secondary px-2 py-0.5 rounded font-bold text-xs">INTELLIGENCE</span>
+</div>
+<nav class="hidden md:flex items-center gap-8 h-full">
+<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2 nav-link-active" id="nav-dashboard" onclick="switchView('dashboard')">Dashboard</button>
+<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2" id="nav-importacao" onclick="switchView('importacao')">Importações</button>
+<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2" id="nav-analise" onclick="switchView('analise')">Análise Jurídica</button>
+<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2" id="nav-configuracoes" onclick="switchView('configuracoes')">Configurações</button>
+</nav>
+<div class="flex items-center gap-4">
+<button class="bg-secondary text-white font-bold px-4 py-2 rounded shadow-sm hover:opacity-90 transition-all flex items-center gap-2" onclick="switchView('importacao')">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                Nova Importação
+            </button>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary">settings</span>
+</div>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-border-subtle bg-surface-container">
+<img alt="Analista" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDi9vJmYjAsEEPRv1qeJ_xiEQZ62Lv8Mg-2oMvbaG_hdwbEEX_2tlTIRzelqxwKScXByl-pVSeDUHRbbU5zoZoP4PcroXe3QgTy7sQZeRiVn9UCs3_nVXw1ESMa9tEKJylvw228ZkO9usfvNf4hIk3aXL2jV_pXEDhQPMTqObVpqo7NmRxHvYDW8LvPHzDW4RPuw7hxjX1NkvlMuXvnCiZ67f6ZT_ptObrCwkGO-6en1NZXSokaqca3FFDfKF5eRsml2YYGz8jiWVw"/>
+</div>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-64 bg-surface-container-low border-r border-border-subtle pt-20 flex flex-col z-40 hidden lg:flex">
+<div class="px-6 mb-8">
+<h2 class="font-headline-sm text-[18px] text-primary">Menu do Sistema</h2>
+<p class="text-on-surface-variant text-xs">Espaço de Análise</p>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<button class="sidebar-link w-full flex items-center gap-3 rounded-lg px-4 py-3 transition-all sidebar-link-active" id="side-dashboard" onclick="switchView('dashboard')">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-bold text-sm">Visão Geral</span>
+</button>
+<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all" id="side-importacao" onclick="switchView('importacao')">
+<span class="material-symbols-outlined">cloud_upload</span>
+<span class="font-bold text-sm">Importação</span>
+</button>
+<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all" id="side-analise" onclick="switchView('analise')">
+<span class="material-symbols-outlined">gavel</span>
+<span class="font-bold text-sm">Análise Jurídica</span>
+</button>
+<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="font-bold text-sm">Garantias</span>
+</button>
+<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all" id="side-configuracoes" onclick="switchView('configuracoes')">
+<span class="material-symbols-outlined">settings_suggest</span>
+<span class="font-bold text-sm">Configurações</span>
+</button>
+</nav>
+<div class="p-4 border-t border-border-subtle">
+<button class="w-full bg-surface-container-highest text-primary font-bold py-3 rounded-lg mb-4 hover:bg-surface-variant transition-colors text-sm">
+            Gerar Relatório
+        </button>
+<div class="space-y-1">
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-2 text-xs hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">help</span> Suporte
+            </a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-2 text-xs hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">history</span> Logs
+            </a>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="lg:ml-64 pt-24 px-margin-desktop pb-12 min-h-screen">
+<div class="max-w-container-max mx-auto">
+<!-- VIEW: DASHBOARD -->
+<div class="view-section active" id="view-dashboard">
+<div class="flex justify-between items-end mb-stack-lg">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface">Dashboard de Inteligência</h1>
+<p class="text-on-surface-variant text-xs mt-1">Status operacional em tempo real</p>
+</div>
+<div class="flex gap-2">
+<button class="border border-outline text-on-surface font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-surface-container transition-colors text-sm">
+<span class="material-symbols-outlined text-[18px]">filter_list</span> Filtrar
+                    </button>
+<button class="bg-primary text-white font-bold px-6 py-2 rounded shadow-sm hover:opacity-90 transition-all text-sm">
+                        Atualizar Dados
+                    </button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter mb-stack-lg">
+<div class="bg-white p-6 border-b-4 border-primary custom-shadow">
+<p class="text-on-surface-variant font-bold text-xs mb-2">TOTAL DE IMPORTAÇÕES</p>
+<div class="flex justify-between items-end">
+<h3 class="text-3xl font-bold">1,284</h3>
+<span class="text-primary font-bold flex items-center text-xs">
+<span class="material-symbols-outlined text-[16px]">trending_up</span> 12%
+                        </span>
+</div>
+</div>
+<div class="bg-white p-6 border-b-4 border-secondary custom-shadow">
+<p class="text-on-surface-variant font-bold text-xs mb-2">ANÁLISES PENDENTES</p>
+<div class="flex justify-between items-end">
+<h3 class="text-3xl font-bold">42</h3>
+<span class="text-secondary font-bold text-xs">Média 4h</span>
+</div>
+</div>
+<div class="bg-white p-6 border-b-4 border-error custom-shadow">
+<p class="text-on-surface-variant font-bold text-xs mb-2">ALTO RISCO DETECTADO</p>
+<div class="flex justify-between items-end">
+<h3 class="text-3xl font-bold text-error">08</h3>
+<span class="text-error font-bold text-xs">Crítico</span>
+</div>
+</div>
+<div class="bg-white p-6 border-b-4 border-primary custom-shadow">
+<p class="text-on-surface-variant font-bold text-xs mb-2">EXPORTADOS (SHEETS)</p>
+<div class="flex justify-between items-end">
+<h3 class="text-3xl font-bold">946</h3>
+<span class="text-primary font-bold text-xs">Sincronizado</span>
+</div>
+</div>
+</div>
+<div class="bg-white border-l-4 border-secondary custom-shadow overflow-hidden">
+<div class="p-6 border-b border-border-subtle flex justify-between items-center">
+<h2 class="text-xl font-bold text-primary">Importações Recentes</h2>
+<input class="px-4 py-2 border border-border-subtle rounded text-sm w-64" placeholder="Buscar ID do lote..." type="text"/>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead class="bg-primary text-white font-bold text-xs">
+<tr>
+<th class="px-6 py-4">ID</th>
+<th class="px-6 py-4">IMÓVEL</th>
+<th class="px-6 py-4">VALOR</th>
+<th class="px-6 py-4">STATUS</th>
+<th class="px-6 py-4">AÇÕES</th>
+</tr>
+</thead>
+<tbody class="zebra-stripe text-sm">
+<tr>
+<td class="px-6 py-4 font-mono">#CRT-8821</td>
+<td class="px-6 py-4">Lakeside Plaza Retail</td>
+<td class="px-6 py-4">R$ 4.250.000</td>
+<td class="px-6 py-4"><span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-[10px] font-bold">LIBERADO</span></td>
+<td class="px-6 py-4"><button class="text-primary font-bold hover:underline" onclick="switchView('analise')">Ver Detalhes</button></td>
+</tr>
+<tr>
+<td class="px-6 py-4 font-mono">#CRT-8822</td>
+<td class="px-6 py-4">Mountain View Ind. Park</td>
+<td class="px-6 py-4">R$ 12.800.000</td>
+<td class="px-6 py-4"><span class="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-[10px] font-bold">EM REVISÃO</span></td>
+<td class="px-6 py-4"><button class="text-primary font-bold hover:underline" onclick="switchView('analise')">Analisar</button></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- VIEW: IMPORTAÇÃO -->
+<div class="view-section" id="view-importacao">
+<h1 class="font-headline-lg text-headline-lg text-on-surface mb-stack-md">Central de Importação</h1>
+<p class="text-on-surface-variant mb-stack-lg">Faça o upload de matrículas (PDF) para processamento via Inteligência Artificial.</p>
+<div class="grid grid-cols-12 gap-gutter">
+<div class="col-span-12 lg:col-span-8 bg-white p-8 border-2 border-dashed border-primary/20 rounded-xl flex flex-col items-center justify-center min-h-[400px]">
+<span class="material-symbols-outlined text-primary text-[64px] mb-4">cloud_upload</span>
+<h3 class="text-xl font-bold text-primary mb-2">Arraste seus arquivos PDF aqui</h3>
+<p class="text-on-surface-variant text-sm mb-6 text-center max-w-md">Ou clique para selecionar arquivos do seu computador. Limite de 50MB por lote.</p>
+<button class="bg-primary text-white font-bold px-8 py-3 rounded-lg shadow-md hover:bg-primary/90 transition-all">Selecionar Arquivos</button>
+</div>
+<div class="col-span-12 lg:col-span-4 space-y-gutter">
+<div class="bg-white p-6 custom-shadow rounded-lg">
+<h4 class="font-bold text-primary mb-4 border-b pb-2">Configuração do Agente IA</h4>
+<div class="space-y-4">
+<div>
+<label class="block text-xs font-bold mb-1">MODELO DE ANÁLISE</label>
+<select class="w-full border-border-subtle rounded text-sm p-2">
+<option>Especialista Imobiliário v4 (Padrão)</option>
+<option>Análise de Risco Rural v2</option>
+<option>Diligência Expressa</option>
+</select>
+</div>
+<div class="flex items-center gap-2">
+<input checked="" class="text-secondary rounded" type="checkbox"/>
+<span class="text-sm">Extração Automática de Dados</span>
+</div>
+<div class="flex items-center gap-2">
+<input checked="" class="text-secondary rounded" type="checkbox"/>
+<span class="text-sm">Cruzamento com Índices de Mercado</span>
+</div>
+</div>
+</div>
+<div class="bg-secondary text-white p-6 rounded-lg custom-shadow">
+<h4 class="font-bold mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined">lightbulb</span> Dica de Processamento
+                        </h4>
+<p class="text-xs opacity-90 leading-relaxed">Arquivos com OCR nativo (gerados por computador) são processados 3x mais rápido que escaneamentos manuais.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- VIEW: ANÁLISE DETALHADA -->
+<div class="view-section" id="view-analise">
+<div class="flex items-center gap-4 mb-stack-md">
+<button class="text-primary font-bold flex items-center gap-1 hover:underline" onclick="switchView('dashboard')">
+<span class="material-symbols-outlined text-[18px]">arrow_back</span> Voltar
+                </button>
+<div class="h-4 w-px bg-border-subtle"></div>
+<h1 class="text-2xl font-bold text-on-surface">Análise: #CRT-8822 - Mountain View Ind. Park</h1>
+</div>
+<div class="bg-white custom-shadow rounded-xl overflow-hidden border border-border-subtle">
+<!-- Internal Tabs -->
+<div class="flex border-b border-border-subtle bg-surface-gray">
+<button class="px-8 py-4 text-sm font-bold border-b-2 border-secondary text-primary" id="tab-proprietarios">Proprietários e Devedores</button>
+<button class="px-8 py-4 text-sm font-bold text-on-surface-variant hover:text-primary transition-colors">Resumo do Imóvel</button>
+<button class="px-8 py-4 text-sm font-bold text-on-surface-variant hover:text-primary transition-colors">Dossiê de Crédito</button>
+<button class="px-8 py-4 text-sm font-bold text-on-surface-variant hover:text-primary transition-colors">Parecer Consolidado</button>
+</div>
+<div class="p-8">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+<div>
+<h3 class="font-bold text-primary mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]">person</span> Cadeia Dominial Recente
+                            </h3>
+<div class="space-y-4">
+<div class="p-4 border-l-4 border-primary bg-surface-container-low rounded-r">
+<div class="flex justify-between items-start mb-2">
+<p class="font-bold text-sm">Atual: Industrial Holdings S.A.</p>
+<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">VÁLIDO</span>
+</div>
+<p class="text-xs text-on-surface-variant">Aquisição em 12/05/2019 via Escritura Pública (Livro 234-A).</p>
+</div>
+<div class="p-4 border-l-4 border-secondary bg-surface-container-low rounded-r">
+<div class="flex justify-between items-start mb-2">
+<p class="font-bold text-sm">Anterior: José Carlos de Oliveira</p>
+<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold">HISTÓRICO</span>
+</div>
+<p class="text-xs text-on-surface-variant">Transferência de propriedade por compra e venda realizada em 2010.</p>
+</div>
+</div>
+</div>
+<div>
+<h3 class="font-bold text-error mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]">warning</span> Alertas de Risco Jurídico
+                            </h3>
+<div class="space-y-4">
+<div class="flex gap-4 p-4 border border-error/20 bg-error/5 rounded-lg">
+<span class="material-symbols-outlined text-error">priority_high</span>
+<div>
+<p class="font-bold text-sm text-error">Processo Trabalhista Detectado</p>
+<p class="text-xs text-on-surface-variant mt-1">Ação 0012345-67.2023.5.04.0001 com valor de causa superior a 50% do imóvel.</p>
+</div>
+</div>
+<div class="flex gap-4 p-4 border border-secondary/20 bg-secondary/5 rounded-lg">
+<span class="material-symbols-outlined text-secondary">info</span>
+<div>
+<p class="font-bold text-sm text-secondary">Indisponibilidade de Bens (AV-8)</p>
+<p class="text-xs text-on-surface-variant mt-1">Averbação de indisponibilidade datada de Jan/2024. Requer verificação.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- VIEW: CONFIGURAÇÕES -->
+<div class="view-section" id="view-configuracoes">
+<h1 class="font-headline-lg text-headline-lg text-on-surface mb-stack-md">Configurações de Sistema</h1>
+<p class="text-on-surface-variant mb-stack-lg">Gerencie integrações e mapeamento de dados para o Google Sheets.</p>
+<div class="bg-white custom-shadow rounded-xl overflow-hidden border border-border-subtle max-w-3xl">
+<div class="p-6 border-b border-border-subtle">
+<h3 class="font-bold text-primary mb-1">Mapeamento Google Sheets</h3>
+<p class="text-xs text-on-surface-variant">Defina para qual planilha e aba os resultados devem ser exportados automaticamente.</p>
+</div>
+<div class="p-6 space-y-6">
+<div>
+<label class="block text-xs font-bold mb-2">URL DA PLANILHA DE DESTINO</label>
+<input class="w-full border-border-subtle rounded p-3 text-sm" type="text" value="https://docs.google.com/spreadsheets/d/1A_z9x_Ym..."/>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<label class="block text-xs font-bold mb-2">ABA PRINCIPAL</label>
+<input class="w-full border-border-subtle rounded p-3 text-sm" type="text" value="DB_IMPORTACOES"/>
+</div>
+<div>
+<label class="block text-xs font-bold mb-2">ABA DE ALERTAS</label>
+<input class="w-full border-border-subtle rounded p-3 text-sm" type="text" value="RISCO_LOG"/>
+</div>
+</div>
+<div class="pt-4 border-t">
+<button class="bg-primary text-white font-bold px-6 py-3 rounded shadow hover:bg-primary/90 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined">save</span> Salvar Configurações
+                        </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Action Button (FAB) -->
+<button class="fixed bottom-8 right-8 w-14 h-14 bg-secondary text-white rounded-full custom-shadow flex items-center justify-center hover:scale-110 transition-transform cursor-pointer">
+<span class="material-symbols-outlined text-[28px]">chat_bubble</span>
+</button>
+<script>
+    /**
+     * SPA View Switching Logic
+     */
+    function switchView(viewId) {
+        // Hide all views
+        document.querySelectorAll('.view-section').forEach(view => {
+            view.classList.remove('active');
+        });
+        
+        // Show target view
+        const targetView = document.getElementById('view-' + viewId);
+        if (targetView) {
+            targetView.classList.add('active');
+        }
+
+        // Update Top Navigation UI
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.classList.remove('nav-link-active');
+        });
+        const activeNavLink = document.getElementById('nav-' + viewId);
+        if (activeNavLink) activeNavLink.classList.add('nav-link-active');
+
+        // Update Sidebar UI
+        document.querySelectorAll('.sidebar-link').forEach(link => {
+            link.classList.remove('sidebar-link-active', 'text-white');
+            link.classList.add('text-on-surface-variant');
+        });
+        const activeSideLink = document.getElementById('side-' + viewId);
+        if (activeSideLink) {
+            activeSideLink.classList.add('sidebar-link-active', 'text-white');
+            activeSideLink.classList.remove('text-on-surface-variant');
+        }
+        
+        // Scroll to top
+        window.scrollTo(0, 0);
+    }
+
+    // Micro-interactions and initialization
+    window.onload = () => {
+        console.log('Cresol Real Estate Intelligence Loaded');
+    };
+</script>
+</body></html>

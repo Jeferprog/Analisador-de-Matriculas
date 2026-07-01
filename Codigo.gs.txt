@@ -1,0 +1,43 @@
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('index')
+      .setTitle('Cresol Real Estate Intelligence')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * Simula o processamento de uma matrícula.
+ * No futuro, aqui será feita a chamada para a API de IA.
+ */
+function processarMatricula(fileData) {
+  // Simulação de delay de processamento
+  Utilities.sleep(2000);
+  
+  return {
+    status: 'success',
+    data: {
+      proprietarios: [
+        { nome: 'Carlos Alberto Santos', documento: '123.456.789-00', participacao: '60%', status: 'REGULAR' },
+        { nome: 'Investimentos Imobiliários LTDA', documento: '00.123.456/0001-99', participacao: '40%', status: 'REGULAR' }
+      ],
+      imovel: {
+        valor: 'R$ 4.2M',
+        risco: '9.4/10',
+        rating: 'AAA+'
+      }
+    }
+  };
+}
+
+/**
+ * Exporta dados para uma planilha específica.
+ */
+function exportarParaSheets(data, spreadsheetId) {
+  try {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    const sheet = ss.getSheets()[0];
+    sheet.appendRow([new Date(), JSON.stringify(data)]);
+    return "Dados exportados com sucesso!";
+  } catch (e) {
+    return "Erro ao exportar: " + e.toString();
+  }
+}
