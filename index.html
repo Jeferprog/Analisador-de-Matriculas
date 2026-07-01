@@ -380,7 +380,7 @@
                 </label>
               </div>
 
-              <button onclick="submitAnalysis()" class="w-full bg-accent-orange hover:bg-accent-orange/95 text-white font-bold py-3.5 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 text-sm">
+              <button id="btn-submit-analysis" onclick="submitAnalysis()" class="w-full bg-accent-orange hover:bg-accent-orange/95 text-white font-bold py-3.5 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed">
                 <i data-lucide="file-check-2" class="w-5 h-5"></i>
                 <span>Enviar para IA</span>
               </button>
@@ -722,6 +722,8 @@
     let analyses = [];
     let selectedAnalysis = null;
     let selectedFileBase64 = ''; // DataURL do PDF/imagem anexado, enviado à IA para OCR
+    let isAnalyzing = false; // impede envios simultâneos enquanto uma análise está em andamento
+    const ANALYZE_TIMEOUT_MS = 360000; // 6 min — limite máximo de execução do Apps Script
     let config = {
       spreadsheetUrl: '',
       abaPrincipal: '',
@@ -1213,8 +1215,22 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       });
     }
 
+    // Habilita/desabilita o botão de envio para evitar cliques repetidos
+    function setSubmitEnabled(enabled) {
+      const btn = document.getElementById('btn-submit-analysis');
+      if (!btn) return;
+      btn.disabled = !enabled;
+      btn.classList.toggle('opacity-60', !enabled);
+      btn.classList.toggle('cursor-not-allowed', !enabled);
+    }
+
     // Call Google Apps Script backend to analyze text
     function submitAnalysis() {
+      if (isAnalyzing) {
+        showToast("error", "Já existe uma análise em andamento. Aguarde a conclusão antes de enviar outra.");
+        return;
+      }
+
       const text = document.getElementById('document-textarea').value.trim();
       const model = document.getElementById('param-model').value;
       const fileName = document.getElementById('gas-file-name').innerText || "Matricula_Importada.pdf";
@@ -1224,13 +1240,17 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
         return;
       }
 
+      isAnalyzing = true;
+      setSubmitEnabled(false);
       showLoading(selectedFileBase64
-        ? "O analista de IA da Cresol está fazendo o OCR e interpretando o documento..."
-        : "O cérebro artificial da Cresol está lendo sua certidão...");
+        ? "O analista de IA da Cresol está fazendo o OCR e interpretando o documento... A leitura de documentos pode levar até 1-2 minutos."
+        : "O cérebro artificial da Cresol está lendo sua certidão...", ANALYZE_TIMEOUT_MS);
 
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(result) {
+            isAnalyzing = false;
+            setSubmitEnabled(true);
             // Upsert: se a matrícula já existia (merge), atualiza; senão insere
             const idx = analyses.findIndex(a => a && a.id === result.id);
             let merged = false;
@@ -1246,6 +1266,8 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
               : "Matrícula #" + result.id + " processada perfeitamente via IA!");
           })
           .withFailureHandler(function(err) {
+            isAnalyzing = false;
+            setSubmitEnabled(true);
             hideLoading();
             showToast("error", "Erro ao processar matrícula: " + err);
           })
@@ -1253,6 +1275,8 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       } else {
         // Simulação client-side se estiver fora do ambiente GAS
         setTimeout(() => {
+          isAnalyzing = false;
+          setSubmitEnabled(true);
           const mockId = "CRT-" + Math.floor(1000 + Math.random() * 9000);
           const mockObj = {
             id: mockId,
@@ -1572,15 +1596,18 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
     }
 
     let loadingWatchdog = null;
-    function showLoading(msg) {
+    // timeoutMs opcional: operações rápidas usam o padrão; a análise de IA passa um tempo longo.
+    function showLoading(msg, timeoutMs) {
       document.getElementById('loading-message').innerText = msg;
       document.getElementById('loading-screen').classList.remove('hidden');
       // Rede de segurança: nunca deixa o loader preso indefinidamente
       if (loadingWatchdog) clearTimeout(loadingWatchdog);
       loadingWatchdog = setTimeout(function() {
         document.getElementById('loading-screen').classList.add('hidden');
-        showToast("error", "A operação demorou mais que o esperado. Verifique a conexão/autorização do Apps Script e tente novamente.");
-      }, 25000);
+        isAnalyzing = false;
+        setSubmitEnabled(true);
+        showToast("error", "A operação demorou mais que o esperado. Ela pode ainda estar sendo processada no servidor — aguarde alguns instantes antes de reenviar para evitar análises duplicadas.");
+      }, timeoutMs || 45000);
     }
 
     function hideLoading() {
