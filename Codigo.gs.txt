@@ -195,6 +195,38 @@ function salvarBancoLocal(list) {
 }
 
 /**
+ * Lê o banco local (ScriptProperties) diretamente, SEM consultar a planilha.
+ * É a fonte usada para localizar análises recém-criadas na hora de exportar/salvar,
+ * já que a planilha pode ainda não conter o registro.
+ */
+function getBancoLocal() {
+  const raw = PropertiesService.getScriptProperties().getProperty('CRESOL_DB_ANALYSES');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) { /* ignora */ }
+  }
+  return [];
+}
+
+/**
+ * Localiza uma análise por id procurando primeiro no banco local (registros recentes)
+ * e, se não achar, no histórico completo (planilha, quando configurada).
+ */
+function encontrarAnalise(id) {
+  const locais = getBancoLocal();
+  for (let i = 0; i < locais.length; i++) {
+    if (locais[i] && locais[i].id === id) return locais[i];
+  }
+  const todas = listarAnalises();
+  for (let j = 0; j < todas.length; j++) {
+    if (todas[j] && todas[j].id === id) return todas[j];
+  }
+  return null;
+}
+
+/**
  * Carrega a lista histórica de análises.
  * Caso haja Planilha conectada, lê as análises dela. Caso contrário, retorna um histórico mockado robusto.
  */
@@ -292,7 +324,7 @@ function salvarAnalise(analysis) {
   analysis.validadoEm = new Date().toISOString();
 
   // Atualiza (ou insere) no banco local
-  const list = listarAnalises();
+  const list = getBancoLocal();
   let found = false;
   for (let i = 0; i < list.length; i++) {
     if (list[i] && list[i].id === analysis.id) {
@@ -361,16 +393,10 @@ function exportarParaSheets(analysisId) {
     throw new Error("URL da planilha de destino não configurada nas configurações de mapeamento Cresol.");
   }
   
-  // Busca a análise nos registros
-  const list = listarAnalises();
-  let target = null;
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].id === analysisId) {
-      target = list[i];
-      break;
-    }
-  }
-  
+  // Busca a análise: primeiro no banco local (onde o registro recém-criado sempre existe),
+  // depois no histórico da planilha. Evita "Análise não encontrada" logo após criar.
+  const target = encontrarAnalise(analysisId);
+
   if (!target) {
     throw new Error("Análise não encontrada nos registros.");
   }
