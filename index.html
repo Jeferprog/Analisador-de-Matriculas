@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cresol Real Estate Intelligence</title>
+  <title>Base de Matrículas de Imóveis — Cresol Cooperar</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Roboto Font Google Fonts -->
@@ -59,6 +59,21 @@
       border-top-color: #f58220;
       animation: spinner 1.5s linear infinite;
     }
+    .editable-field {
+      cursor: text;
+      border-radius: 4px;
+      transition: background-color 0.15s, box-shadow 0.15s;
+    }
+    .editable-field:hover {
+      background-color: rgba(245, 130, 32, 0.06);
+      box-shadow: inset 0 0 0 1px rgba(245, 130, 32, 0.3);
+    }
+    .editable-field[contenteditable="true"] {
+      background-color: #fff;
+      box-shadow: 0 0 0 2px #f58220;
+      outline: none;
+      cursor: text;
+    }
     @keyframes spinner {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
@@ -77,13 +92,13 @@
   <aside class="w-full md:w-64 bg-white border-r border-border-gray flex flex-col shrink-0">
     <div class="p-6 border-b border-border-gray flex flex-col gap-1">
       <div class="flex items-center gap-2">
-        <span class="font-bold text-2xl tracking-tight text-primary-green font-sans">
-          Cresol Real Estate
+        <span class="font-bold text-xl tracking-tight text-primary-green font-sans leading-tight">
+          Base de Matrículas de Imóveis
         </span>
       </div>
       <div class="flex items-center">
         <span class="bg-accent-orange/10 text-accent-orange text-[10px] font-black tracking-widest px-2 py-0.5 rounded">
-          INTELLIGENCE
+          Cresol Cooperar
         </span>
       </div>
     </div>
@@ -221,6 +236,7 @@
               <select id="status-filter" onchange="renderTable()" class="w-full border border-border-gray rounded-lg p-2.5 text-sm bg-white outline-none">
                 <option value="TODOS">Todos os Status</option>
                 <option value="LIBERADO">Liberado</option>
+                <option value="VALIDADO">Validado</option>
                 <option value="EM REVISÃO">Em Revisão</option>
                 <option value="REJEITADO">Rejeitado</option>
               </select>
@@ -250,12 +266,12 @@
               <thead class="bg-primary-green text-white font-bold text-xs">
                 <tr>
                   <th class="px-6 py-4">ID do Lote</th>
-                  <th class="px-6 py-4">Data e Hora</th>
-                  <th class="px-6 py-4">Arquivo / Documento</th>
+                  <th class="px-6 py-4">Nº Matrícula</th>
                   <th class="px-6 py-4">Comarca / UF</th>
-                  <th class="px-6 py-4">Valor Estimado</th>
-                  <th class="px-6 py-4">Risco IA</th>
+                  <th class="px-6 py-4">Proprietário(s)</th>
+                  <th class="px-6 py-4">CPF's / CNPJ's</th>
                   <th class="px-6 py-4 text-center">Status</th>
+                  <th class="px-6 py-4">Data e Hora</th>
                   <th class="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
@@ -385,6 +401,10 @@
             <h2 id="analise-detalhada-titulo" class="text-xl font-bold text-text-dark">Laudo Ativo</h2>
           </div>
           <div class="flex gap-2">
+            <button id="btn-save-edits" onclick="triggerSaveEdits()" class="hidden bg-accent-orange hover:bg-accent-orange/95 text-white text-xs font-bold px-4 py-2.5 rounded shadow flex items-center gap-2 transition-all">
+              <i data-lucide="save" class="w-4 h-4"></i>
+              <span>Salvar Alterações</span>
+            </button>
             <button id="btn-export-sheets-active" onclick="triggerSheetsExport()" class="bg-primary-green hover:bg-primary-green/95 text-white text-xs font-bold px-4 py-2.5 rounded shadow flex items-center gap-2 transition-all">
               <i data-lucide="external-link" class="w-4 h-4"></i>
               <span>Sincronizar Sheets</span>
@@ -468,42 +488,65 @@
 
             <!-- Tab Contents: Imovel -->
             <div id="tab-content-imovel" class="hidden space-y-4">
-              <h4 class="font-bold text-sm text-primary-green uppercase mb-3">Informações Gerais de Cadastro</h4>
+              <div class="flex items-center justify-between">
+                <h4 class="font-bold text-sm text-primary-green uppercase mb-3">Informações Gerais de Cadastro</h4>
+                <span class="text-[10px] text-text-gray italic flex items-center gap-1">
+                  <i data-lucide="edit-3" class="w-3 h-3"></i> Dê dois cliques em um campo para editar
+                </span>
+              </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
                 <div class="space-y-3 bg-bg-body p-4 rounded-lg">
                   <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Nº Matrícula</span>
+                    <p id="info-matricula" data-path="imovel.matricula" class="editable-field font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Cartório / Ofício</span>
-                    <p id="info-cartorio" class="font-semibold text-text-dark"></p>
+                    <p id="info-cartorio" data-path="imovel.cartorio" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                   <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Comarca</span>
-                    <p id="info-comarca" class="font-semibold text-text-dark"></p>
+                    <p id="info-comarca" data-path="imovel.comarca" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                   <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Tipo do Imóvel</span>
-                    <p id="info-tipo" class="font-semibold text-text-dark"></p>
+                    <p id="info-tipo" data-path="imovel.tipo" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                   <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Data de Emissão da Certidão</span>
-                    <p id="info-data-emissao" class="font-semibold text-text-dark"></p>
+                    <p id="info-data-emissao" data-path="imovel.dataEmissaoCertidao" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                   <div id="info-incra-wrap" class="hidden">
                     <span class="text-xs text-text-gray uppercase font-bold">Cadastro INCRA / CCIR</span>
-                    <p id="info-incra" class="font-semibold text-text-dark"></p>
+                    <p id="info-incra" data-path="imovel.cadastroIncra" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                 </div>
                 <div class="space-y-3 bg-bg-body p-4 rounded-lg">
                   <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Valor Estimado</span>
+                    <p id="info-valor" data-path="imovel.valor" class="editable-field font-semibold text-text-dark"></p>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <span class="text-xs text-text-gray uppercase font-bold">Risco Geral</span>
+                      <p id="info-risco" data-path="imovel.risco" class="editable-field font-semibold text-text-dark"></p>
+                    </div>
+                    <div>
+                      <span class="text-xs text-text-gray uppercase font-bold">Rating</span>
+                      <p id="info-rating" data-path="imovel.rating" class="editable-field font-semibold text-text-dark"></p>
+                    </div>
+                  </div>
+                  <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Área Total do Terreno</span>
-                    <p id="info-area" class="font-semibold text-text-dark"></p>
+                    <p id="info-area" data-path="imovel.area" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                   <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Área Construída / Benfeitorias</span>
-                    <p id="info-area-construida" class="font-semibold text-text-dark"></p>
+                    <p id="info-area-construida" data-path="imovel.areaConstruida" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                   <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Endereço / Localização</span>
-                    <p id="info-endereco" class="font-semibold text-text-dark"></p>
+                    <p id="info-endereco" data-path="imovel.endereco" class="editable-field font-semibold text-text-dark"></p>
                   </div>
                 </div>
               </div>
@@ -529,7 +572,7 @@
 
               <div class="bg-bg-body p-4 rounded-lg">
                 <span class="text-xs text-text-gray uppercase font-bold">Descrição da Matrícula</span>
-                <p id="info-descricao" class="text-text-dark leading-relaxed text-xs mt-1"></p>
+                <p id="info-descricao" data-path="imovel.descricaoCurta" class="editable-field text-text-dark leading-relaxed text-xs mt-1"></p>
               </div>
 
               <!-- Descrição Legal (minuta) -->
@@ -540,7 +583,7 @@
                     <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar
                   </button>
                 </div>
-                <p id="info-descricao-legal" class="text-text-dark leading-relaxed text-xs whitespace-pre-line"></p>
+                <p id="info-descricao-legal" data-path="imovel.descricaoLegal" class="editable-field text-text-dark leading-relaxed text-xs whitespace-pre-line"></p>
               </div>
             </div>
 
@@ -582,9 +625,14 @@
 
             <!-- Tab Contents: Parecer -->
             <div id="tab-content-parecer" class="hidden space-y-4">
-              <h4 class="font-bold text-sm text-primary-green uppercase mb-3">Parecer Jurídico do Analista Cresol</h4>
+              <div class="flex items-center justify-between">
+                <h4 class="font-bold text-sm text-primary-green uppercase mb-3">Parecer Jurídico do Analista Cresol</h4>
+                <span class="text-[10px] text-text-gray italic flex items-center gap-1">
+                  <i data-lucide="edit-3" class="w-3 h-3"></i> Dois cliques para editar
+                </span>
+              </div>
               <div class="p-6 bg-primary-green/5 border border-primary-green/10 rounded-lg">
-                <p id="info-parecer" class="text-sm text-text-dark leading-relaxed whitespace-pre-line"></p>
+                <p id="info-parecer" data-path="parecerConsolidado" class="editable-field text-sm text-text-dark leading-relaxed whitespace-pre-line"></p>
               </div>
             </div>
 
@@ -643,10 +691,10 @@
             </div>
             <div class="p-6 space-y-4">
               <div>
-                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Sua API Key do Gemini (Opcional)</label>
-                <input type="password" id="config-gemini-key" placeholder="Digite sua chave de API para o cérebro real..." class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Suas API Keys do Gemini (uma por linha)</label>
+                <textarea id="config-gemini-key" rows="3" placeholder="Cole uma ou mais chaves de API, uma por linha.&#10;Ex.:&#10;AIzaSy...chave1&#10;AIzaSy...chave2" class="w-full border border-border-gray rounded-lg p-2.5 text-sm font-mono outline-none focus:ring-1 focus:ring-primary-green"></textarea>
                 <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">
-                  A chave ficará salva com segurança nas propriedades do Script Google do seu projeto. Caso deixe em branco, o sistema utilizará um motor de análise simulado altamente estruturado para demonstração técnica Cresol.
+                  Cadastre <strong>uma chave por linha</strong>. Ao atingir o limite de cota de uma chave, o sistema passa automaticamente para a próxima. As chaves ficam salvas com segurança nas propriedades do Script Google. Deixe em branco para usar o motor de simulação.
                 </p>
               </div>
 
@@ -656,7 +704,7 @@
 
               <button onclick="saveApiKey()" class="bg-accent-orange hover:bg-accent-orange/95 text-white font-bold text-xs px-5 py-3 rounded-lg shadow-md transition-all flex items-center gap-2">
                 <i data-lucide="key" class="w-4 h-4"></i>
-                <span>Atualizar Chave</span>
+                <span>Atualizar Chaves</span>
               </button>
             </div>
           </div>
@@ -721,12 +769,14 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(data) {
-            analyses = data;
+            analyses = Array.isArray(data) ? data : [];
             loadConfigData();
           })
           .withFailureHandler(function(err) {
-            hideLoading();
+            // Mesmo com falha, segue para carregar config e liberar a interface
+            analyses = [];
             showToast("error", "Erro ao carregar dados do Apps Script: " + err);
+            loadConfigData();
           })
           .listarAnalises();
       } else {
@@ -767,22 +817,30 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(conf) {
-            config = conf;
-            applyConfigToUI();
-            renderTable();
-            updateKPIs();
-            hideLoading();
+            if (conf) config = conf;
+            finishInitialRender();
           })
           .withFailureHandler(function(err) {
-            hideLoading();
             showToast("error", "Erro ao carregar configurações: " + err);
+            finishInitialRender();
           })
           .getSystemConfig();
       } else {
-        hideLoading();
+        finishInitialRender();
+      }
+    }
+
+    // Renderiza a interface inicial garantindo que o loader SEMPRE seja escondido,
+    // mesmo que alguma função de render lance exceção (evita a tela travada).
+    function finishInitialRender() {
+      try {
         applyConfigToUI();
         renderTable();
         updateKPIs();
+      } catch (e) {
+        showToast("error", "Falha ao montar a interface: " + (e && e.message ? e.message : e));
+      } finally {
+        hideLoading();
       }
     }
 
@@ -793,8 +851,9 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       
       const badge = document.getElementById('api-status-badge');
       if (config.geminiKeyConfigured) {
+        const n = config.geminiKeysCount || 1;
         badge.className = "p-3 rounded-lg bg-success-green/10 text-success-green border border-success-green/20 text-xs flex items-center gap-2";
-        badge.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> <strong>Chave Gemini Ativa!</strong> Suas análises serão processadas pela inteligência artificial real.`;
+        badge.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> <strong>${n} chave(s) Gemini ativa(s)!</strong> Análises pela IA real${n > 1 ? ', com rotação automática ao esgotar cada chave.' : '.'}`;
       } else {
         badge.className = "p-3 rounded-lg bg-accent-orange/10 text-accent-orange border border-accent-orange/20 text-xs flex items-center gap-2";
         badge.innerHTML = `<i data-lucide="info" class="w-4 h-4"></i> <strong>Modo Simulação Inteligente</strong>. Insira sua chave Gemini API para habilitar a inteligência real.`;
@@ -897,10 +956,26 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
 
     // Calculate metrics
     function updateKPIs() {
+      if (!Array.isArray(analyses)) analyses = [];
       document.getElementById('kpi-total').innerText = analyses.length;
-      document.getElementById('kpi-revisao').innerText = analyses.filter(a => a.status === 'EM REVISÃO').length;
-      document.getElementById('kpi-rejeitados').innerText = analyses.filter(a => a.status === 'REJEITADO').length;
-      document.getElementById('kpi-sheets').innerText = config.spreadsheetUrl ? analyses.length : "0";
+      document.getElementById('kpi-revisao').innerText = analyses.filter(a => a && a.status === 'EM REVISÃO').length;
+      document.getElementById('kpi-rejeitados').innerText = analyses.filter(a => a && a.status === 'REJEITADO').length;
+      document.getElementById('kpi-sheets').innerText = (config && config.spreadsheetUrl) ? analyses.length : "0";
+    }
+
+    // Escapa texto para uso seguro em innerHTML
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // Classe de cor do selo de status
+    function statusBadgeClass(status) {
+      if (status === 'LIBERADO') return 'bg-success-green/10 text-success-green border border-success-green/20';
+      if (status === 'VALIDADO') return 'bg-info-blue/10 text-info-blue border border-info-blue/20';
+      if (status === 'EM REVISÃO') return 'bg-accent-orange/10 text-accent-orange border border-accent-orange/20';
+      return 'bg-danger-red/10 text-danger-red border border-danger-red/20';
     }
 
     // Render tabular records
@@ -908,15 +983,23 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       const tbody = document.getElementById('analyses-table-body');
       tbody.innerHTML = '';
 
+      if (!Array.isArray(analyses)) analyses = [];
       const query = document.getElementById('search-input').value.toLowerCase();
       const statusFilter = document.getElementById('status-filter').value;
 
       const filtered = analyses.filter(item => {
+        if (!item) return false;
+        const imo = item.imovel || {};
+        const props = Array.isArray(item.proprietarios) ? item.proprietarios : [];
         const matchesStatus = statusFilter === 'TODOS' || item.status === statusFilter;
-        const matchesSearch = item.id.toLowerCase().includes(query) ||
-                              item.imovel.comarca.toLowerCase().includes(query) ||
-                              item.imovel.endereco.toLowerCase().includes(query) ||
-                              item.proprietarios.some(p => p.nome.toLowerCase().includes(query));
+        const matchesSearch = String(item.id || '').toLowerCase().includes(query) ||
+                              String(imo.matricula || '').toLowerCase().includes(query) ||
+                              String(imo.comarca || '').toLowerCase().includes(query) ||
+                              String(imo.endereco || '').toLowerCase().includes(query) ||
+                              props.some(p => p && (
+                                String(p.nome || '').toLowerCase().includes(query) ||
+                                String(p.documento || '').toLowerCase().includes(query)
+                              ));
         return matchesStatus && matchesSearch;
       });
 
@@ -938,33 +1021,31 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
         tr.className = "hover:bg-primary-green/5 cursor-pointer transition-colors";
         tr.onclick = () => openAnalysis(item);
 
-        const badgeClass = item.status === 'LIBERADO' 
-          ? 'bg-success-green/10 text-success-green border border-success-green/20' 
-          : item.status === 'EM REVISÃO' 
-          ? 'bg-accent-orange/10 text-accent-orange border border-accent-orange/20' 
-          : 'bg-danger-red/10 text-danger-red border border-danger-red/20';
+        const imo = item.imovel || {};
+        const props = Array.isArray(item.proprietarios) ? item.proprietarios : [];
+        const nomes = props.length ? props.map(p => esc(p && p.nome ? p.nome : '—')).join('<br>') : '—';
+        const docs = props.length ? props.map(p => esc(p && p.documento ? p.documento : 'Não informado')).join('<br>') : '—';
+        let dataFmt = '—';
+        try { dataFmt = item.timestamp ? new Date(item.timestamp).toLocaleString('pt-BR') : '—'; } catch (e) { dataFmt = String(item.timestamp || '—'); }
 
         tr.innerHTML = `
-          <td class="px-6 py-4 font-mono font-bold text-primary-green">#${item.id}</td>
-          <td class="px-6 py-4 text-text-gray text-xs whitespace-nowrap">${new Date(item.timestamp).toLocaleString('pt-BR')}</td>
-          <td class="px-6 py-4 text-text-dark font-medium">${item.nomeArquivo}</td>
-          <td class="px-6 py-4 text-text-dark">${item.imovel.comarca}</td>
-          <td class="px-6 py-4 font-semibold text-text-dark whitespace-nowrap">${item.imovel.valor}</td>
-          <td class="px-6 py-4 whitespace-nowrap">
-            <strong class="text-text-dark">${item.imovel.risco}</strong>
-            <span class="text-[10px] text-text-gray ml-1 bg-bg-body px-1 rounded border">${item.imovel.rating}</span>
-          </td>
-          <td class="px-6 py-4 text-center whitespace-nowrap">
-            <span class="px-3 py-1 rounded-full text-[10px] font-black tracking-wider ${badgeClass}">
-              ${item.status}
+          <td class="px-6 py-4 font-mono font-bold text-primary-green align-top">#${esc(item.id || '—')}</td>
+          <td class="px-6 py-4 font-semibold text-text-dark align-top whitespace-nowrap">${esc(imo.matricula || '—')}</td>
+          <td class="px-6 py-4 text-text-dark align-top">${esc(imo.comarca || '—')}</td>
+          <td class="px-6 py-4 text-text-dark align-top">${nomes}</td>
+          <td class="px-6 py-4 font-mono text-xs text-text-gray align-top">${docs}</td>
+          <td class="px-6 py-4 text-center align-top whitespace-nowrap">
+            <span class="px-3 py-1 rounded-full text-[10px] font-black tracking-wider ${statusBadgeClass(item.status)}">
+              ${esc(item.status)}
             </span>
           </td>
-          <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
+          <td class="px-6 py-4 text-text-gray text-xs align-top whitespace-nowrap">${dataFmt}</td>
+          <td class="px-6 py-4 text-right align-top whitespace-nowrap" onclick="event.stopPropagation()">
             <div class="flex items-center justify-end gap-2">
-              <button onclick="triggerSheetsExport('${item.id}')" title="Sincronizar Sheets" class="p-1.5 text-primary-green hover:bg-primary-green/10 rounded transition-all">
+              <button onclick="triggerSheetsExport('${esc(item.id)}')" title="Sincronizar Sheets" class="p-1.5 text-primary-green hover:bg-primary-green/10 rounded transition-all">
                 <i data-lucide="external-link" class="w-4 h-4"></i>
               </button>
-              <button onclick="triggerDelete('${item.id}')" title="Excluir" class="p-1.5 text-danger-red hover:bg-danger-red/10 rounded transition-all">
+              <button onclick="triggerDelete('${esc(item.id)}')" title="Excluir" class="p-1.5 text-danger-red hover:bg-danger-red/10 rounded transition-all">
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
             </div>
@@ -977,7 +1058,11 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
 
     // Open detailed analysis report
     function openAnalysis(item) {
-      selectedAnalysis = item;
+      // Clona para que edições inline não alterem a tabela antes de salvar
+      try { selectedAnalysis = JSON.parse(JSON.stringify(item)); } catch (e) { selectedAnalysis = item; }
+      item = selectedAnalysis;
+      editsDirty = false;
+      document.getElementById('btn-save-edits').classList.add('hidden');
       document.getElementById('nav-analise').classList.remove('hidden');
       document.getElementById('active-laudo-id').innerText = "#" + item.id;
       
@@ -991,28 +1076,22 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       
       const statusBadge = document.getElementById('detail-status');
       statusBadge.innerText = item.status;
-      if (item.status === 'LIBERADO') {
-        statusBadge.className = "self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider bg-success-green/10 text-success-green border border-success-green/20";
-      } else if (item.status === 'EM REVISÃO') {
-        statusBadge.className = "self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider bg-accent-orange/10 text-accent-orange border border-accent-orange/20";
-      } else {
-        statusBadge.className = "self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider bg-danger-red/10 text-danger-red border border-danger-red/20";
-      }
+      statusBadge.className = "self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider " + statusBadgeClass(item.status);
 
       // Fill tabs
       // Tab: Proprietarios
       const pTbody = document.getElementById('detail-proprietarios-tbody');
       pTbody.innerHTML = '';
       if (item.proprietarios && item.proprietarios.length > 0) {
-        item.proprietarios.forEach(p => {
+        item.proprietarios.forEach((p, idx) => {
           const sColor = p.status === 'REGULAR' ? 'text-success-green' : p.status === 'ATENÇÃO' ? 'text-accent-orange' : 'text-text-gray';
           pTbody.innerHTML += `
             <tr>
-              <td class="px-4 py-3 font-semibold text-text-dark">${p.nome}</td>
-              <td class="px-4 py-3 font-mono">${p.documento || 'Não informado'}</td>
-              <td class="px-4 py-3">${p.participacao || '100%'}</td>
-              <td class="px-4 py-3">${p.estadoCivil || '—'}</td>
-              <td class="px-4 py-3 font-bold ${sColor}">${p.status}</td>
+              <td class="px-4 py-3 font-semibold text-text-dark editable-field" data-path="proprietarios.${idx}.nome">${esc(p.nome || '—')}</td>
+              <td class="px-4 py-3 font-mono editable-field" data-path="proprietarios.${idx}.documento">${esc(p.documento || 'Não informado')}</td>
+              <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.participacao">${esc(p.participacao || '100%')}</td>
+              <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.estadoCivil">${esc(p.estadoCivil || '—')}</td>
+              <td class="px-4 py-3 font-bold ${sColor} editable-field" data-path="proprietarios.${idx}.status">${esc(p.status || '—')}</td>
             </tr>
           `;
         });
@@ -1022,10 +1101,14 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
 
       // Tab: Imovel Info
       const imo = item.imovel || {};
+      document.getElementById('info-matricula').innerText = imo.matricula || '—';
       document.getElementById('info-cartorio').innerText = imo.cartorio || '—';
       document.getElementById('info-comarca').innerText = imo.comarca || '—';
       document.getElementById('info-tipo').innerText = imo.tipo || '—';
       document.getElementById('info-data-emissao').innerText = imo.dataEmissaoCertidao || '—';
+      document.getElementById('info-valor').innerText = imo.valor || '—';
+      document.getElementById('info-risco').innerText = imo.risco || '—';
+      document.getElementById('info-rating').innerText = imo.rating || '—';
       document.getElementById('info-area').innerText = imo.area || '—';
       document.getElementById('info-area-construida').innerText = imo.areaConstruida || '—';
       document.getElementById('info-endereco').innerText = imo.endereco || '—';
@@ -1148,13 +1231,19 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(result) {
-            analyses.unshift(result);
+            // Upsert: se a matrícula já existia (merge), atualiza; senão insere
+            const idx = analyses.findIndex(a => a && a.id === result.id);
+            let merged = false;
+            if (idx > -1) { analyses[idx] = result; merged = true; }
+            else { analyses.unshift(result); }
             updateKPIs();
             renderTable();
             hideLoading();
             resetImportForm();
             openAnalysis(result);
-            showToast("success", "Matrícula #" + result.id + " processada perfeitamente via IA!");
+            showToast("success", merged
+              ? "Matrícula já existente: informações novas foram acrescentadas ao lote #" + result.id + "."
+              : "Matrícula #" + result.id + " processada perfeitamente via IA!");
           })
           .withFailureHandler(function(err) {
             hideLoading();
@@ -1276,12 +1365,14 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
     // Save Gemini API Key
     function saveApiKey() {
       const key = document.getElementById('config-gemini-key').value.trim();
-      showLoading("Gravando chave API do Gemini nas propriedades...");
+      const nKeys = key ? key.split(/[\r\n,;]+/).map(s => s.trim()).filter(Boolean).length : 0;
+      showLoading("Gravando chaves de API do Gemini nas propriedades...");
 
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(response) {
-            config.geminiKeyConfigured = key ? true : false;
+            config.geminiKeyConfigured = nKeys > 0;
+            config.geminiKeysCount = nKeys;
             applyConfigToUI();
             hideLoading();
             document.getElementById('config-gemini-key').value = '';
@@ -1289,16 +1380,17 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
           })
           .withFailureHandler(function(err) {
             hideLoading();
-            showToast("error", "Erro ao gravar chave API: " + err);
+            showToast("error", "Erro ao gravar chaves API: " + err);
           })
           .salvarGeminiApiKey(key);
       } else {
         setTimeout(() => {
-          config.geminiKeyConfigured = key ? true : false;
+          config.geminiKeyConfigured = nKeys > 0;
+          config.geminiKeysCount = nKeys;
           applyConfigToUI();
           hideLoading();
           document.getElementById('config-gemini-key').value = '';
-          showToast("success", "Simulação: Chave de teste alterada!");
+          showToast("success", "Simulação: chaves de teste atualizadas!");
         }, 1000);
       }
     }
@@ -1351,6 +1443,111 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       }
     }
 
+    // ===== Edição inline (duplo clique) =====
+    let editsDirty = false;
+
+    function getByPath(obj, path) {
+      return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+    }
+    function setByPath(obj, path, val) {
+      const keys = path.split('.');
+      let o = obj;
+      for (let i = 0; i < keys.length - 1; i++) {
+        const k = keys[i];
+        if (o[k] == null) o[k] = /^\d+$/.test(keys[i + 1]) ? [] : {};
+        o = o[k];
+      }
+      o[keys[keys.length - 1]] = val;
+    }
+
+    // Delegação global: dois cliques em um campo editável abre a edição
+    document.addEventListener('dblclick', function(e) {
+      const el = e.target.closest('.editable-field');
+      if (!el || !selectedAnalysis) return;
+      if (el.getAttribute('contenteditable') === 'true') return;
+      startInlineEdit(el);
+    });
+
+    function startInlineEdit(el) {
+      el.setAttribute('data-original', el.innerText);
+      el.setAttribute('contenteditable', 'true');
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      const finish = function(commit) {
+        el.removeEventListener('blur', onBlur);
+        el.removeEventListener('keydown', onKey);
+        el.removeAttribute('contenteditable');
+        if (commit) {
+          const val = el.innerText.trim();
+          const path = el.getAttribute('data-path');
+          if (path) {
+            setByPath(selectedAnalysis, path, val);
+            editsDirty = true;
+            document.getElementById('btn-save-edits').classList.remove('hidden');
+          }
+          el.innerText = val;
+        } else {
+          el.innerText = el.getAttribute('data-original') || '';
+        }
+        el.removeAttribute('data-original');
+      };
+      const onBlur = function() { finish(true); };
+      const onKey = function(ev) {
+        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); el.blur(); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+      };
+      el.addEventListener('blur', onBlur);
+      el.addEventListener('keydown', onKey);
+    }
+
+    // Salva as edições e marca o registro como VALIDADO
+    function triggerSaveEdits() {
+      if (!selectedAnalysis) return;
+      selectedAnalysis.status = 'VALIDADO';
+      showLoading("Salvando alterações e validando registro...");
+
+      const persistLocal = function() {
+        const idx = analyses.findIndex(a => a && a.id === selectedAnalysis.id);
+        if (idx > -1) analyses[idx] = selectedAnalysis;
+        editsDirty = false;
+        document.getElementById('btn-save-edits').classList.add('hidden');
+      };
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(saved) {
+            const idx = analyses.findIndex(a => a && a.id === saved.id);
+            if (idx > -1) analyses[idx] = saved; else analyses.unshift(saved);
+            editsDirty = false;
+            document.getElementById('btn-save-edits').classList.add('hidden');
+            hideLoading();
+            renderTable();
+            updateKPIs();
+            openAnalysis(saved);
+            showToast("success", "Registro validado e salvo com sucesso!");
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao salvar alterações: " + err);
+          })
+          .salvarAnalise(selectedAnalysis);
+      } else {
+        setTimeout(() => {
+          persistLocal();
+          hideLoading();
+          renderTable();
+          updateKPIs();
+          openAnalysis(selectedAnalysis);
+          showToast("success", "Simulação: alterações salvas e status alterado para Validado!");
+        }, 700);
+      }
+    }
+
     // Toast and spinner util functions
     function showToast(type, text) {
       const toast = document.getElementById('notification-toast');
@@ -1374,12 +1571,20 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       }, 5000);
     }
 
+    let loadingWatchdog = null;
     function showLoading(msg) {
       document.getElementById('loading-message').innerText = msg;
       document.getElementById('loading-screen').classList.remove('hidden');
+      // Rede de segurança: nunca deixa o loader preso indefinidamente
+      if (loadingWatchdog) clearTimeout(loadingWatchdog);
+      loadingWatchdog = setTimeout(function() {
+        document.getElementById('loading-screen').classList.add('hidden');
+        showToast("error", "A operação demorou mais que o esperado. Verifique a conexão/autorização do Apps Script e tente novamente.");
+      }, 25000);
     }
 
     function hideLoading() {
+      if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
       document.getElementById('loading-screen').classList.add('hidden');
     }
   </script>

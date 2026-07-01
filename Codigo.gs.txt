@@ -14,7 +14,7 @@ const PROP_CONFIG = 'CRESOL_CONFIG_JSON';
 function doGet() {
   return HtmlService.createTemplateFromFile('index')
       .evaluate()
-      .setTitle('Cresol Real Estate Intelligence')
+      .setTitle('Base de Matrículas de Imóveis — Cresol Cooperar')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -27,22 +27,45 @@ function include(filename) {
 }
 
 /**
- * Obtém a chave de API do Gemini salva nas propriedades do projeto
+ * Retorna a lista de chaves de API do Gemini cadastradas (uma por linha ou separadas
+ * por vírgula/ponto-e-vírgula). Permite rotação automática quando uma chave atinge o limite.
  */
-function getGeminiApiKey() {
-  return PropertiesService.getScriptProperties().getProperty(PROP_API_KEY) || '';
+function getGeminiApiKeys() {
+  const raw = PropertiesService.getScriptProperties().getProperty(PROP_API_KEY) || '';
+  return raw.split(/[\r\n,;]+/)
+            .map(function(k) { return k.trim(); })
+            .filter(function(k) { return k.length > 0; });
 }
 
 /**
- * Salva a chave de API do Gemini nas propriedades do projeto de forma segura
+ * Obtém a primeira chave de API do Gemini (compatibilidade).
+ */
+function getGeminiApiKey() {
+  const keys = getGeminiApiKeys();
+  return keys.length > 0 ? keys[0] : '';
+}
+
+/**
+ * Salva uma ou mais chaves de API do Gemini (uma por linha) de forma segura.
  */
 function salvarGeminiApiKey(key) {
-  if (key) {
-    PropertiesService.getScriptProperties().setProperty(PROP_API_KEY, key.trim());
-    return { success: true, message: "Chave API do Gemini atualizada com sucesso no ambiente corporativo Cresol!" };
+  const props = PropertiesService.getScriptProperties();
+  const keys = String(key || '').split(/[\r\n,;]+/)
+                 .map(function(k) { return k.trim(); })
+                 .filter(function(k) { return k.length > 0; });
+
+  if (keys.length > 0) {
+    props.setProperty(PROP_API_KEY, keys.join('\n'));
+    const plural = keys.length > 1;
+    return {
+      success: true,
+      message: plural
+        ? (keys.length + " chaves de API cadastradas. O sistema fará rotação automática ao atingir o limite de cada uma.")
+        : "Chave API do Gemini atualizada com sucesso no ambiente corporativo Cresol!"
+    };
   } else {
-    PropertiesService.getScriptProperties().deleteProperty(PROP_API_KEY);
-    return { success: true, message: "Chave API removida. O sistema passará a operar em modo de simulação integrada." };
+    props.deleteProperty(PROP_API_KEY);
+    return { success: true, message: "Chaves API removidas. O sistema passará a operar em modo de simulação integrada." };
   }
 }
 
@@ -50,18 +73,21 @@ function salvarGeminiApiKey(key) {
  * Obtém as configurações do sistema para integração com Planilhas Google
  */
 function getSystemConfig() {
+  const keysCount = getGeminiApiKeys().length;
   const defaultConf = {
     spreadsheetUrl: '',
     abaPrincipal: 'DB_IMPORTACOES',
     abaAlertas: 'RISCO_LOG',
-    geminiKeyConfigured: getGeminiApiKey() ? true : false
+    geminiKeyConfigured: keysCount > 0,
+    geminiKeysCount: keysCount
   };
-  
+
   const raw = PropertiesService.getScriptProperties().getProperty(PROP_CONFIG);
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
-      parsed.geminiKeyConfigured = getGeminiApiKey() ? true : false;
+      parsed.geminiKeyConfigured = keysCount > 0;
+      parsed.geminiKeysCount = keysCount;
       return parsed;
     } catch (e) {
       return defaultConf;
@@ -169,6 +195,38 @@ function salvarBancoLocal(list) {
 }
 
 /**
+ * Lê o banco local (ScriptProperties) diretamente, SEM consultar a planilha.
+ * É a fonte usada para localizar análises recém-criadas na hora de exportar/salvar,
+ * já que a planilha pode ainda não conter o registro.
+ */
+function getBancoLocal() {
+  const raw = PropertiesService.getScriptProperties().getProperty('CRESOL_DB_ANALYSES');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) { /* ignora */ }
+  }
+  return [];
+}
+
+/**
+ * Localiza uma análise por id procurando primeiro no banco local (registros recentes)
+ * e, se não achar, no histórico completo (planilha, quando configurada).
+ */
+function encontrarAnalise(id) {
+  const locais = getBancoLocal();
+  for (let i = 0; i < locais.length; i++) {
+    if (locais[i] && locais[i].id === id) return locais[i];
+  }
+  const todas = listarAnalises();
+  for (let j = 0; j < todas.length; j++) {
+    if (todas[j] && todas[j].id === id) return todas[j];
+  }
+  return null;
+}
+
+/**
  * Carrega a lista histórica de análises.
  * Caso haja Planilha conectada, lê as análises dela. Caso contrário, retorna um histórico mockado robusto.
  */
@@ -254,6 +312,46 @@ function listarAnalises() {
 }
 
 /**
+ * Salva as edições manuais de uma análise e marca o registro como VALIDADO.
+ * Atualiza o banco local e, se houver planilha configurada, sincroniza a linha.
+ */
+function salvarAnalise(analysis) {
+  if (!analysis || !analysis.id) {
+    throw new Error("Análise inválida para salvamento.");
+  }
+
+  analysis.status = 'VALIDADO';
+  analysis.validadoEm = new Date().toISOString();
+
+  // Atualiza (ou insere) no banco local
+  const list = getBancoLocal();
+  let found = false;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i] && list[i].id === analysis.id) {
+      list[i] = analysis;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    list.unshift(analysis);
+  }
+  salvarBancoLocal(list);
+
+  // Sincroniza com a planilha (upsert por id) quando configurada
+  const config = getSystemConfig();
+  if (config.spreadsheetUrl) {
+    try {
+      exportarParaSheets(analysis.id);
+    } catch (e) {
+      // Mantém o salvamento local mesmo se a planilha falhar
+    }
+  }
+
+  return analysis;
+}
+
+/**
  * Exclui uma análise do histórico local
  */
 function deletarAnalise(id) {
@@ -295,16 +393,10 @@ function exportarParaSheets(analysisId) {
     throw new Error("URL da planilha de destino não configurada nas configurações de mapeamento Cresol.");
   }
   
-  // Busca a análise nos registros
-  const list = listarAnalises();
-  let target = null;
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].id === analysisId) {
-      target = list[i];
-      break;
-    }
-  }
-  
+  // Busca a análise: primeiro no banco local (onde o registro recém-criado sempre existe),
+  // depois no histórico da planilha. Evita "Análise não encontrada" logo após criar.
+  const target = encontrarAnalise(analysisId);
+
   if (!target) {
     throw new Error("Análise não encontrada nos registros.");
   }
@@ -389,6 +481,107 @@ function exportarParaSheets(analysisId) {
 }
 
 /**
+ * Normaliza um texto para comparação (minúsculas, só alfanumérico).
+ */
+function normalizarChave(s) {
+  return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Verifica se duas análises se referem à MESMA matrícula.
+ * Regra: mesmo número de matrícula E mesmo cartório (ou, na ausência de cartório,
+ * mesma comarca). Matrículas de número igual em cartórios/cidades diferentes são
+ * tratadas como imóveis DISTINTOS.
+ */
+function mesmaMatricula(a, b) {
+  const ia = a.imovel || {}, ib = b.imovel || {};
+  const mA = normalizarChave(ia.matricula), mB = normalizarChave(ib.matricula);
+  if (!mA || !mB || mA !== mB) return false;
+  const cartA = normalizarChave(ia.cartorio), cartB = normalizarChave(ib.cartorio);
+  if (cartA && cartB) return cartA === cartB;
+  const comA = normalizarChave(ia.comarca), comB = normalizarChave(ib.comarca);
+  return !!(comA && comB && comA === comB);
+}
+
+/**
+ * Considera um valor "vazio" (placeholders de não identificado inclusos).
+ */
+function valorVazio(v) {
+  if (v == null || v === '') return true;
+  const s = String(v).toLowerCase();
+  return s.indexOf('não identificad') > -1 || s === 'não avaliado' || s === 'não mensurada' || s === 'n/d';
+}
+
+/**
+ * Mescla uma nova análise em uma existente da MESMA matrícula:
+ * preenche campos vazios e acrescenta apenas itens novos das listas (sem duplicar).
+ */
+function mesclarAnalises(existente, novo) {
+  const imoE = existente.imovel || {}, imoN = novo.imovel || {};
+  Object.keys(imoN).forEach(function(k) {
+    if (k === 'confrontacoes') return;
+    if (valorVazio(imoE[k]) && !valorVazio(imoN[k])) imoE[k] = imoN[k];
+  });
+  imoE.confrontacoes = imoE.confrontacoes || [];
+  (imoN.confrontacoes || []).forEach(function(c) {
+    if (!imoE.confrontacoes.some(function(x) { return normalizarChave(x.posicao) === normalizarChave(c.posicao); })) {
+      imoE.confrontacoes.push(c);
+    }
+  });
+  existente.imovel = imoE;
+
+  const addUnicos = function(destino, origem, chaveFn) {
+    destino = destino || [];
+    (origem || []).forEach(function(item) {
+      const k = chaveFn(item);
+      if (k && !destino.some(function(x) { return chaveFn(x) === k; })) destino.push(item);
+    });
+    return destino;
+  };
+  existente.proprietarios = addUnicos(existente.proprietarios, novo.proprietarios, function(p) { return normalizarChave(p.documento) || normalizarChave(p.nome); });
+  existente.gravames = addUnicos(existente.gravames, novo.gravames, function(g) { return normalizarChave(g.registro) + normalizarChave(g.tipo); });
+  existente.alertas = addUnicos(existente.alertas, novo.alertas, function(a) { return normalizarChave(a.titulo); });
+  existente.cadeiaDominial = addUnicos(existente.cadeiaDominial, novo.cadeiaDominial, function(c) { return normalizarChave(c.registro) || (normalizarChave(c.data) + normalizarChave(c.tipoTransacao)); });
+
+  if (valorVazio(existente.parecerConsolidado) && !valorVazio(novo.parecerConsolidado)) {
+    existente.parecerConsolidado = novo.parecerConsolidado;
+  }
+  existente.timestamp = novo.timestamp || existente.timestamp;
+  return existente;
+}
+
+/**
+ * Auto-exporta para a planilha, se configurada (silencioso em caso de falha).
+ */
+function autoExportar(id) {
+  const sysConf = getSystemConfig();
+  if (sysConf.spreadsheetUrl) {
+    try { exportarParaSheets(id); } catch (e) { /* silencioso */ }
+  }
+}
+
+/**
+ * Registra uma nova análise OU, se a matrícula já existir, apenas acrescenta as
+ * informações novas ao registro existente. Retorna o objeto efetivamente salvo.
+ */
+function registrarOuMesclar(finalResult) {
+  const list = listarAnalises();
+  for (let i = 0; i < list.length; i++) {
+    if (list[i] && mesmaMatricula(list[i], finalResult)) {
+      const merged = mesclarAnalises(list[i], finalResult);
+      list[i] = merged;
+      salvarBancoLocal(list);
+      autoExportar(merged.id);
+      return merged;
+    }
+  }
+  list.unshift(finalResult);
+  salvarBancoLocal(list);
+  autoExportar(finalResult.id);
+  return finalResult;
+}
+
+/**
  * Envia o documento para análise via API do Gemini
  */
 function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
@@ -396,10 +589,10 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
   const name = fileName || "Documento.txt";
   const uniqueId = "CRT-" + Math.floor(1000 + Math.random() * 9000);
   
-  const apiKey = getGeminiApiKey();
-  
-  // Caso de Fallback Inteligente (Se chave de API não configurada no Apps Script)
-  if (!apiKey || apiKey.trim() === '') {
+  const apiKeys = getGeminiApiKeys();
+
+  // Caso de Fallback Inteligente (Se nenhuma chave de API configurada no Apps Script)
+  if (apiKeys.length === 0) {
     Utilities.sleep(1500); // Simula o tempo de análise
     
     const containsRural = (textInput && textInput.toLowerCase().indexOf("rural") > -1) || (name && name.toLowerCase().indexOf("rural") > -1) || (textInput && textInput.toLowerCase().indexOf("fazenda") > -1);
@@ -559,27 +752,13 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       status: simResult.status
     };
     
-    // Salva no banco persistente do script
-    const currentList = listarAnalises();
-    currentList.unshift(finalResult);
-    salvarBancoLocal(currentList);
-    
-    // Auto-exporta se houver planilha ativa
-    const sysConfSim = getSystemConfig();
-    if (sysConfSim.spreadsheetUrl) {
-      try {
-        exportarParaSheets(uniqueId);
-      } catch (e) {
-        // Ignora
-      }
-    }
-    
-    return finalResult;
+    // Salva (ou mescla, se a matrícula já existir) no banco persistente do script
+    return registrarOuMesclar(finalResult);
   }
   
-  // Caso de Chave API ativa: Chamada Real ao Gemini API via UrlFetchApp
+  // Caso de Chave(s) API ativa(s): Chamada Real ao Gemini API via UrlFetchApp
   try {
-    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+    const baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=";
 
     let systemInstructionText =
       "Você é o Analista Sênior de Registros Públicos e Direito Imobiliário da cooperativa Cresol. Sua missão de alta responsabilidade é examinar detalhadamente matrículas de imóveis, interpretando a linguagem técnica registral e notarial, rastreando a cadeia dominial (proprietários anteriores e atuais) com suas participações, e identificando rigorosamente restrições de crédito e gravames (penhoras, alienações fiduciárias ativas ou baixadas, indisponibilidades de bens, hipotecas, servidões, usufrutos, arresto, arrolamento). Ao final, classifique o risco fiduciário do bem como garantia (de AAA+ a D) e consolide um parecer técnico de elegibilidade jurídica para crédito.\n\n" +
@@ -691,14 +870,39 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "muteHttpExceptions": true
     };
     
-    const response = UrlFetchApp.fetch(url, options);
-    const code = response.getResponseCode();
-    const bodyText = response.getContentText();
-    
-    if (code !== 200) {
+    // Rotação de chaves: tenta cada chave em ordem; ao atingir limite/cota, usa a próxima.
+    let code = 0;
+    let bodyText = '';
+    let sucesso = false;
+    let ultimoErro = '';
+    for (let ki = 0; ki < apiKeys.length; ki++) {
+      const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(apiKeys[ki]), options);
+      code = response.getResponseCode();
+      bodyText = response.getContentText();
+
+      if (code === 200) {
+        sucesso = true;
+        break;
+      }
+
+      // Erros de cota/limite/chave inválida -> tenta a próxima chave cadastrada
+      const ehLimite = (code === 429 || code === 403) || /RESOURCE_EXHAUSTED|quota|rate limit|exceeded|expired|invalid/i.test(bodyText);
+      if (ehLimite && ki < apiKeys.length - 1) {
+        ultimoErro = "Chave " + (ki + 1) + " indisponível (status " + code + ").";
+        continue;
+      }
+
+      // Outro erro (payload, servidor) ou última chave -> interrompe
+      if (ehLimite) {
+        throw new Error("Todas as " + apiKeys.length + " chave(s) de API atingiram o limite/estão indisponíveis. Último status: " + code + ". " + bodyText);
+      }
       throw new Error("Erro da API Gemini (Status " + code + "): " + bodyText);
     }
-    
+
+    if (!sucesso) {
+      throw new Error("Não foi possível obter resposta da IA. " + ultimoErro);
+    }
+
     const parsedRaw = JSON.parse(bodyText);
 
     // Valida se a IA de fato retornou uma análise (evita quebra por bloqueio de segurança ou resposta vazia)
@@ -749,23 +953,9 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       status: parsedData.status || "EM REVISÃO"
     };
     
-    // Grava no banco
-    const currentList = listarAnalises();
-    currentList.unshift(finalResult);
-    salvarBancoLocal(currentList);
-    
-    // Auto-exporta se houver planilha ativa
-    const sysConf = getSystemConfig();
-    if (sysConf.spreadsheetUrl) {
-      try {
-        exportarParaSheets(uniqueId);
-      } catch (e) {
-        // Ignora erro
-      }
-    }
-    
-    return finalResult;
-    
+    // Grava (ou mescla, se a matrícula já existir) no banco
+    return registrarOuMesclar(finalResult);
+
   } catch (err) {
     throw new Error("Falha ao se comunicar com o cérebro da Inteligência Artificial: " + err.toString());
   }
