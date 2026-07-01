@@ -1,420 +1,1387 @@
 <!DOCTYPE html>
-
-<html class="light" lang="pt-br"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Cresol Real Estate Intelligence - Portal Integrado</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            "colors": {
-                "primary": "#005c46", // Verde Cresol
-                "secondary": "#f58220", // Laranja Cresol
-                "primary-container": "#005c46",
-                "on-surface": "#1b1c1c",
-                "text-muted": "#666666",
-                "surface-bright": "#fbf9f8",
-                "surface-variant": "#e4e2e1",
-                "on-primary": "#ffffff",
-                "background": "#fbf9f8",
-                "border-subtle": "#e0e0e0",
-                "surface-container": "#f0eded",
-                "surface-container-low": "#f6f3f2",
-                "surface-container-highest": "#e4e2e1",
-                "outline": "#6f7974",
-                "error": "#ba1a1a"
-            },
-            "borderRadius": {
-                "DEFAULT": "0.125rem",
-                "lg": "0.25rem",
-                "xl": "0.5rem",
-                "full": "0.75rem"
-            },
-            "spacing": {
-                "margin-desktop": "2rem",
-                "stack-lg": "2rem",
-                "container-max": "1250px",
-                "gutter": "1.5rem",
-                "stack-md": "1rem",
-                "stack-sm": "0.5rem"
-            },
-            "fontFamily": {
-                "body-md": ["Roboto"],
-                "headline-md": ["Roboto"],
-                "headline-lg": ["Roboto"]
-            }
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cresol Real Estate Intelligence</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Roboto Font Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons via CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'primary-green': '#005c46',
+            'accent-orange': '#f58220',
+            'bg-body': '#f8f9fa',
+            'text-dark': '#212529',
+            'text-gray': '#6c757d',
+            'border-gray': '#dee2e6',
+            'success-green': '#28a745',
+            'danger-red': '#dc3545',
+            'info-blue': '#0d6efd',
           },
-        },
+          fontFamily: {
+            sans: ['Roboto', 'sans-serif'],
+          }
+        }
       }
-    </script>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .view-section { display: none; }
-        .view-section.active { display: block; }
-        .zebra-stripe tr:nth-child(even) { background-color: #f8f9fa; }
-        .custom-shadow { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); }
-        .nav-link-active { 
-            border-bottom: 2px solid #f58220; 
-            color: #005c46 !important; 
-            font-weight: bold;
-        }
-        .sidebar-link-active {
-            background-color: #f58220 !important;
-            color: white !important;
-        }
-    </style>
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      background-color: #f8f9fa;
+      color: #212529;
+    }
+    .zebra-stripe tr:nth-child(even) {
+      background-color: rgba(0, 92, 70, 0.02);
+    }
+    .border-left-orange {
+      border-left: 4px solid #f58220;
+    }
+    .border-left-green {
+      border-left: 4px solid #005c46;
+    }
+    .border-left-red {
+      border-left: 4px solid #dc3545;
+    }
+    .soft-shadow {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    .loader {
+      border-top-color: #f58220;
+      animation: spinner 1.5s linear infinite;
+    }
+    @keyframes spinner {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
 </head>
-<body class="bg-background text-on-surface font-body-md">
-<!-- TopNavBar -->
-<header class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-border-subtle h-16 w-full">
-<div class="flex justify-between items-center px-margin-desktop h-full w-full max-w-container-max mx-auto">
-<div class="flex items-center gap-4">
-<span class="font-headline-md text-headline-md font-bold text-primary">Cresol Real Estate</span>
-<span class="bg-secondary/10 text-secondary px-2 py-0.5 rounded font-bold text-xs">INTELLIGENCE</span>
-</div>
-<nav class="hidden md:flex items-center gap-8 h-full">
-<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2 nav-link-active" id="nav-dashboard" onclick="switchView('dashboard')">Dashboard</button>
-<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2" id="nav-importacao" onclick="switchView('importacao')">Importações</button>
-<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2" id="nav-analise" onclick="switchView('analise')">Análise Jurídica</button>
-<button class="nav-link font-body-md text-on-surface-variant hover:text-primary transition-colors h-full px-2" id="nav-configuracoes" onclick="switchView('configuracoes')">Configurações</button>
-</nav>
-<div class="flex items-center gap-4">
-<button class="bg-secondary text-white font-bold px-4 py-2 rounded shadow-sm hover:opacity-90 transition-all flex items-center gap-2" onclick="switchView('importacao')">
-<span class="material-symbols-outlined text-[18px]">add</span>
-                Nova Importação
+<body class="min-h-screen bg-bg-body flex flex-col md:flex-row antialiased">
+
+  <!-- NOTIFICATION TOAST -->
+  <div id="notification-toast" class="hidden fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-4 rounded-lg shadow-xl border bg-white transition-all duration-300 max-w-md">
+    <div id="toast-icon"></div>
+    <div id="toast-text" class="text-sm font-medium"></div>
+  </div>
+
+  <!-- SIDEBAR NAVIGATION -->
+  <aside class="w-full md:w-64 bg-white border-r border-border-gray flex flex-col shrink-0">
+    <div class="p-6 border-b border-border-gray flex flex-col gap-1">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-2xl tracking-tight text-primary-green font-sans">
+          Cresol Real Estate
+        </span>
+      </div>
+      <div class="flex items-center">
+        <span class="bg-accent-orange/10 text-accent-orange text-[10px] font-black tracking-widest px-2 py-0.5 rounded">
+          INTELLIGENCE
+        </span>
+      </div>
+    </div>
+
+    <!-- Navegação -->
+    <nav class="flex-1 p-4 space-y-1">
+      <button onclick="switchView('dashboard')" id="nav-dashboard" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium bg-accent-orange text-white transition-colors">
+        <i data-lucide="database" class="w-5 h-5 shrink-0"></i>
+        <span>Painel Principal</span>
+      </button>
+
+      <button onclick="switchView('importacao')" id="nav-importacao" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-text-gray hover:bg-bg-body hover:text-text-dark transition-colors">
+        <i data-lucide="upload-cloud" class="w-5 h-5 shrink-0"></i>
+        <span>Importação IA</span>
+      </button>
+
+      <button onclick="switchView('analise')" id="nav-analise" class="hidden w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium text-text-gray hover:bg-bg-body hover:text-text-dark transition-colors">
+        <div class="flex items-center gap-3">
+          <i data-lucide="file-text" class="w-5 h-5 shrink-0"></i>
+          <span>Laudo Ativo</span>
+        </div>
+        <span id="active-laudo-id" class="text-[10px] font-bold bg-primary-green text-white px-1.5 py-0.5 rounded">
+          #CRT-0000
+        </span>
+      </button>
+
+      <button onclick="switchView('configuracoes')" id="nav-configuracoes" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-text-gray hover:bg-bg-body hover:text-text-dark transition-colors">
+        <i data-lucide="settings" class="w-5 h-5 shrink-0"></i>
+        <span>Configurações</span>
+      </button>
+    </nav>
+
+    <!-- Rodapé Cooperativa -->
+    <div class="p-4 border-t border-border-gray bg-bg-body/50">
+      <div class="flex items-center gap-3 text-xs text-text-gray mb-3">
+        <i data-lucide="calendar" class="w-4 h-4"></i>
+        <span>Google Apps Script v1.0</span>
+      </div>
+      <div class="bg-primary-green text-white p-3 rounded-lg flex flex-col gap-1">
+        <span class="text-[10px] uppercase font-bold tracking-wider opacity-80">Cooperativa Cresol</span>
+        <span class="text-xs font-semibold">Garantia Imobiliária</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+    <!-- Header -->
+    <header class="bg-white border-b border-border-gray h-16 shrink-0 flex items-center justify-between px-6 md:px-8">
+      <div class="flex items-center gap-3">
+        <h1 class="text-lg font-bold text-primary-green flex items-center gap-2">
+          <i data-lucide="database" class="text-accent-orange w-5 h-5"></i>
+          <span>Portal de Análise de Imóveis (GAS)</span>
+        </h1>
+        <span class="hidden md:inline text-xs text-text-gray italic">
+          — Integrado com Google Workspace
+        </span>
+      </div>
+      <button onclick="switchView('importacao')" class="bg-accent-orange hover:bg-accent-orange/95 text-white text-xs font-bold px-4 py-2 rounded shadow transition-all flex items-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        <span>Nova Importação</span>
+      </button>
+    </header>
+
+    <!-- LOADING SCREEN -->
+    <div id="loading-screen" class="hidden fixed inset-0 z-50 bg-text-dark/40 backdrop-blur-sm flex items-center justify-center p-6">
+      <div class="bg-white p-8 rounded-lg max-w-md w-full border-left-orange text-center soft-shadow space-y-4">
+        <div class="w-12 h-12 border-4 border-gray-200 border-t-accent-orange rounded-full loader mx-auto"></div>
+        <h3 class="text-lg font-bold text-primary-green">Processando com Inteligência Artificial</h3>
+        <p id="loading-message" class="text-xs text-text-gray leading-relaxed">
+          Iniciando conexão com o robô analista da Cresol e escaneando o inteiro teor do documento...
+        </p>
+      </div>
+    </div>
+
+    <!-- VIEW CONTAINER -->
+    <div class="flex-1 p-6 md:p-8 max-w-[1250px] w-full mx-auto space-y-8">
+      
+      <!-- 1. VIEW: DASHBOARD -->
+      <div id="view-dashboard" class="space-y-8">
+        <div>
+          <h2 class="text-2xl font-bold text-primary-green">Dashboard de Inteligência</h2>
+          <p class="text-sm text-text-gray mt-1">Visão geral do risco de garantias imobiliárias analisadas.</p>
+        </div>
+
+        <!-- KPIs -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div class="bg-white p-6 rounded-lg soft-shadow border-b-4 border-primary-green">
+            <p class="text-text-gray font-semibold text-[11px] uppercase tracking-wider mb-2">Total de Importações</p>
+            <div class="flex justify-between items-end">
+              <h3 id="kpi-total" class="text-3xl font-bold text-text-dark">0</h3>
+              <span class="text-primary-green font-bold flex items-center text-xs gap-1">
+                <i data-lucide="trending-up" class="w-4 h-4"></i> Ativo
+              </span>
+            </div>
+          </div>
+
+          <div class="bg-white p-6 rounded-lg soft-shadow border-b-4 border-accent-orange">
+            <p class="text-text-gray font-semibold text-[11px] uppercase tracking-wider mb-2">Análises em Revisão</p>
+            <div class="flex justify-between items-end">
+              <h3 id="kpi-revisao" class="text-3xl font-bold text-text-dark">0</h3>
+              <span class="text-accent-orange font-bold text-xs">Moderação</span>
+            </div>
+          </div>
+
+          <div class="bg-white p-6 rounded-lg soft-shadow border-b-4 border-danger-red">
+            <p class="text-text-gray font-semibold text-[11px] uppercase tracking-wider mb-2">Alto Risco / Rejeitados</p>
+            <div class="flex justify-between items-end">
+              <h3 id="kpi-rejeitados" class="text-3xl font-bold text-danger-red">0</h3>
+              <span class="text-danger-red font-bold text-xs uppercase">Crítico</span>
+            </div>
+          </div>
+
+          <div class="bg-white p-6 rounded-lg soft-shadow border-b-4 border-primary-green">
+            <p class="text-text-gray font-semibold text-[11px] uppercase tracking-wider mb-2">Sincronizados (Planilha)</p>
+            <div class="flex justify-between items-end">
+              <h3 id="kpi-sheets" class="text-3xl font-bold text-primary-green">0</h3>
+              <span class="text-text-gray text-xs">Google Sheets</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white p-5 rounded-lg soft-shadow border border-border-gray">
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+            <div class="md:col-span-6">
+              <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Buscar Imóvel ou Proprietário</label>
+              <div class="relative">
+                <input type="text" id="search-input" oninput="renderTable()" placeholder="Busque por Comarca, CPF, Proprietário ou Matrícula..." class="w-full border border-border-gray rounded-lg p-2.5 pl-10 text-sm outline-none">
+                <i data-lucide="search" class="w-4 h-4 text-text-gray absolute left-3.5 top-3.5"></i>
+              </div>
+            </div>
+            <div class="md:col-span-4">
+              <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Filtrar Status</label>
+              <select id="status-filter" onchange="renderTable()" class="w-full border border-border-gray rounded-lg p-2.5 text-sm bg-white outline-none">
+                <option value="TODOS">Todos os Status</option>
+                <option value="LIBERADO">Liberado</option>
+                <option value="EM REVISÃO">Em Revisão</option>
+                <option value="REJEITADO">Rejeitado</option>
+              </select>
+            </div>
+            <div class="md:col-span-2">
+              <button onclick="clearFilters()" class="w-full text-text-gray hover:text-text-dark font-semibold text-xs border border-dashed border-border-gray py-3 rounded-lg hover:border-text-gray transition-all">
+                Limpar Filtros
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden">
+          <div class="p-6 border-b border-border-gray flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 class="font-bold text-lg text-primary-green">Registros das Matrículas</h3>
+              <p class="text-xs text-text-gray mt-0.5">Clique em uma linha para abrir a análise detalhada e o parecer jurídico completo.</p>
+            </div>
+            <div id="table-stats" class="text-xs font-medium text-text-gray bg-bg-body px-3 py-1.5 rounded border border-border-gray">
+              Mostrando 0 registros
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-primary-green text-white font-bold text-xs">
+                <tr>
+                  <th class="px-6 py-4">ID do Lote</th>
+                  <th class="px-6 py-4">Data e Hora</th>
+                  <th class="px-6 py-4">Arquivo / Documento</th>
+                  <th class="px-6 py-4">Comarca / UF</th>
+                  <th class="px-6 py-4">Valor Estimado</th>
+                  <th class="px-6 py-4">Risco IA</th>
+                  <th class="px-6 py-4 text-center">Status</th>
+                  <th class="px-6 py-4 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="analyses-table-body" class="divide-y divide-border-gray text-sm zebra-stripe">
+                <!-- Inserido dinamicamente via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. VIEW: IMPORTAÇÃO -->
+      <div id="view-importacao" class="hidden space-y-8">
+        <div>
+          <h2 class="text-2xl font-bold text-primary-green">Central de Importação e OCR IA</h2>
+          <p class="text-sm text-text-gray mt-1">Carregue um arquivo de matrícula de teste ou cole a transcrição em texto abaixo.</p>
+        </div>
+
+        <!-- Predefined Samples -->
+        <div class="bg-white p-6 rounded-lg soft-shadow border border-border-gray">
+          <h3 class="font-bold text-sm text-primary-green mb-3 uppercase tracking-wider flex items-center gap-2">
+            <i data-lucide="check-circle" class="text-accent-orange w-5 h-5"></i>
+            Amostras Prontas para Teste de Conceito
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div onclick="selectSample('rural')" class="p-4 rounded-lg border-2 border-border-gray hover:border-primary-green bg-bg-body/50 cursor-pointer transition-all">
+              <div class="flex justify-between items-center mb-1">
+                <span class="font-bold text-sm text-text-dark">Fazenda Bela Vista (Rural)</span>
+                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary-green text-white">RURAL</span>
+              </div>
+              <p class="text-xs text-text-gray">Imóvel regular de 420 hectares em Sorriso-MT.</p>
+            </div>
+
+            <div onclick="selectSample('urbano')" class="p-4 rounded-lg border-2 border-border-gray hover:border-primary-green bg-bg-body/50 cursor-pointer transition-all">
+              <div class="flex justify-between items-center mb-1">
+                <span class="font-bold text-sm text-text-dark">Apto Moinhos (Urbano - Alto Risco)</span>
+                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-accent-orange text-white">URBANO</span>
+              </div>
+              <p class="text-xs text-text-gray">Indisponibilidade de bens e penhora cível.</p>
+            </div>
+
+            <div onclick="selectSample('industrial')" class="p-4 rounded-lg border-2 border-border-gray hover:border-primary-green bg-bg-body/50 cursor-pointer transition-all">
+              <div class="flex justify-between items-center mb-1">
+                <span class="font-bold text-sm text-text-dark">Galpão BR-282 (Industrial)</span>
+                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-text-gray text-white">INDUSTRIAL</span>
+              </div>
+              <p class="text-xs text-text-gray">Servidão de passagem e litígio trabalhista.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div class="lg:col-span-8 space-y-6">
+            
+            <!-- File Upload Simulation Area -->
+            <div class="bg-white p-8 border-2 border-dashed border-primary-green/20 hover:border-primary-green rounded-lg flex flex-col items-center justify-center min-h-[180px] transition-all relative">
+              <i data-lucide="upload-cloud" class="w-10 h-10 text-primary-green mb-3"></i>
+              <h3 class="text-md font-bold text-primary-green">Upload de Matrícula (PDF, Foto ou TXT)</h3>
+              <p class="text-xs text-text-gray mb-4 text-center max-w-sm">
+                Carregue a matrícula em <strong>PDF</strong> ou <strong>foto/imagem</strong> (JPG/PNG) — a IA fará a leitura (OCR) do documento, mesmo digitalizado ou fotografado. Você também pode carregar um <strong>.txt</strong> com a transcrição ou usar as amostras acima.
+              </p>
+              <input type="file" id="gas-file-input" accept=".txt,.pdf,.png,.jpg,.jpeg,image/*,application/pdf" onchange="handleFileSelected(event)" class="text-xs border border-border-gray p-2 rounded bg-bg-body">
+              <div id="selected-file-label" class="hidden mt-3 text-xs font-bold text-accent-orange flex items-center gap-1">
+                <i data-lucide="file-text" class="w-4 h-4"></i>
+                <span id="gas-file-name"></span>
+              </div>
+            </div>
+
+            <!-- Text Area -->
+            <div class="bg-white p-6 rounded-lg soft-shadow border border-border-gray space-y-3">
+              <h4 class="font-bold text-sm text-text-dark uppercase tracking-wider">
+                Teor Completo do Documento da Matrícula para IA
+              </h4>
+              <textarea id="document-textarea" rows="12" placeholder="Cole aqui o texto completo contido na certidão de matrícula..." class="w-full border border-border-gray rounded-lg p-3 text-sm font-mono outline-none focus:ring-1 focus:ring-primary-green"></textarea>
+            </div>
+          </div>
+
+          <!-- Parameters Area -->
+          <div class="lg:col-span-4 space-y-6">
+            <div class="bg-white p-6 rounded-lg soft-shadow border border-border-gray space-y-5">
+              <h4 class="font-bold text-sm text-primary-green border-b border-border-gray pb-2 uppercase tracking-wider">
+                Parâmetros Analíticos
+              </h4>
+
+              <div>
+                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Modelo IA</label>
+                <select id="param-model" class="w-full border border-border-gray rounded-lg p-2.5 text-xs bg-white outline-none">
+                  <option value="Especialista Imobiliário v4">Especialista Imobiliário v4 (Cresol Geral)</option>
+                  <option value="Análise de Risco Rural v2">Análise de Risco Rural v2 (Agronegócio)</option>
+                  <option value="Diligência Expressa">Diligência Expressa (Análise Veloz)</option>
+                </select>
+              </div>
+
+              <div class="space-y-3">
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked class="mt-1 accent-primary-green">
+                  <span class="text-xs text-text-gray leading-tight">Auditar Cadeia Dominial</span>
+                </label>
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked class="mt-1 accent-primary-green">
+                  <span class="text-xs text-text-gray leading-tight">Mapear Penhoras e Processos</span>
+                </label>
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked class="mt-1 accent-primary-green">
+                  <span class="text-xs text-text-gray leading-tight">Auto-Exportar para Sheets</span>
+                </label>
+              </div>
+
+              <button onclick="submitAnalysis()" class="w-full bg-accent-orange hover:bg-accent-orange/95 text-white font-bold py-3.5 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 text-sm">
+                <i data-lucide="file-check-2" class="w-5 h-5"></i>
+                <span>Enviar para IA</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. VIEW: ANÁLISE DETALHADA -->
+      <div id="view-analise" class="hidden space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <button onclick="switchView('dashboard')" class="text-primary-green hover:text-primary-green/80 font-bold flex items-center gap-1.5 hover:underline text-sm">
+              <i data-lucide="arrow-left" class="w-4 h-4"></i>
+              <span>Voltar</span>
             </button>
-<div class="flex items-center gap-2 text-on-surface-variant">
-<span class="material-symbols-outlined cursor-pointer hover:text-primary">notifications</span>
-<span class="material-symbols-outlined cursor-pointer hover:text-primary">settings</span>
-</div>
-<div class="w-8 h-8 rounded-full overflow-hidden border border-border-subtle bg-surface-container">
-<img alt="Analista" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDi9vJmYjAsEEPRv1qeJ_xiEQZ62Lv8Mg-2oMvbaG_hdwbEEX_2tlTIRzelqxwKScXByl-pVSeDUHRbbU5zoZoP4PcroXe3QgTy7sQZeRiVn9UCs3_nVXw1ESMa9tEKJylvw228ZkO9usfvNf4hIk3aXL2jV_pXEDhQPMTqObVpqo7NmRxHvYDW8LvPHzDW4RPuw7hxjX1NkvlMuXvnCiZ67f6ZT_ptObrCwkGO-6en1NZXSokaqca3FFDfKF5eRsml2YYGz8jiWVw"/>
-</div>
-</div>
-</div>
-</header>
-<!-- SideNavBar -->
-<aside class="fixed left-0 top-0 h-full w-64 bg-surface-container-low border-r border-border-subtle pt-20 flex flex-col z-40 hidden lg:flex">
-<div class="px-6 mb-8">
-<h2 class="font-headline-sm text-[18px] text-primary">Menu do Sistema</h2>
-<p class="text-on-surface-variant text-xs">Espaço de Análise</p>
-</div>
-<nav class="flex-1 px-4 space-y-1">
-<button class="sidebar-link w-full flex items-center gap-3 rounded-lg px-4 py-3 transition-all sidebar-link-active" id="side-dashboard" onclick="switchView('dashboard')">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="font-bold text-sm">Visão Geral</span>
-</button>
-<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all" id="side-importacao" onclick="switchView('importacao')">
-<span class="material-symbols-outlined">cloud_upload</span>
-<span class="font-bold text-sm">Importação</span>
-</button>
-<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all" id="side-analise" onclick="switchView('analise')">
-<span class="material-symbols-outlined">gavel</span>
-<span class="font-bold text-sm">Análise Jurídica</span>
-</button>
-<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all">
-<span class="material-symbols-outlined">verified_user</span>
-<span class="font-bold text-sm">Garantias</span>
-</button>
-<button class="sidebar-link w-full flex items-center gap-3 text-on-surface-variant rounded-lg px-4 py-3 hover:bg-surface-container-highest transition-all" id="side-configuracoes" onclick="switchView('configuracoes')">
-<span class="material-symbols-outlined">settings_suggest</span>
-<span class="font-bold text-sm">Configurações</span>
-</button>
-</nav>
-<div class="p-4 border-t border-border-subtle">
-<button class="w-full bg-surface-container-highest text-primary font-bold py-3 rounded-lg mb-4 hover:bg-surface-variant transition-colors text-sm">
-            Gerar Relatório
-        </button>
-<div class="space-y-1">
-<a class="flex items-center gap-3 text-on-surface-variant px-4 py-2 text-xs hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]">help</span> Suporte
-            </a>
-<a class="flex items-center gap-3 text-on-surface-variant px-4 py-2 text-xs hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]">history</span> Logs
-            </a>
-</div>
-</div>
-</aside>
-<!-- Main Content Area -->
-<main class="lg:ml-64 pt-24 px-margin-desktop pb-12 min-h-screen">
-<div class="max-w-container-max mx-auto">
-<!-- VIEW: DASHBOARD -->
-<div class="view-section active" id="view-dashboard">
-<div class="flex justify-between items-end mb-stack-lg">
-<div>
-<h1 class="font-headline-lg text-headline-lg text-on-surface">Dashboard de Inteligência</h1>
-<p class="text-on-surface-variant text-xs mt-1">Status operacional em tempo real</p>
-</div>
-<div class="flex gap-2">
-<button class="border border-outline text-on-surface font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-surface-container transition-colors text-sm">
-<span class="material-symbols-outlined text-[18px]">filter_list</span> Filtrar
-                    </button>
-<button class="bg-primary text-white font-bold px-6 py-2 rounded shadow-sm hover:opacity-90 transition-all text-sm">
-                        Atualizar Dados
-                    </button>
-</div>
-</div>
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter mb-stack-lg">
-<div class="bg-white p-6 border-b-4 border-primary custom-shadow">
-<p class="text-on-surface-variant font-bold text-xs mb-2">TOTAL DE IMPORTAÇÕES</p>
-<div class="flex justify-between items-end">
-<h3 class="text-3xl font-bold">1,284</h3>
-<span class="text-primary font-bold flex items-center text-xs">
-<span class="material-symbols-outlined text-[16px]">trending_up</span> 12%
-                        </span>
-</div>
-</div>
-<div class="bg-white p-6 border-b-4 border-secondary custom-shadow">
-<p class="text-on-surface-variant font-bold text-xs mb-2">ANÁLISES PENDENTES</p>
-<div class="flex justify-between items-end">
-<h3 class="text-3xl font-bold">42</h3>
-<span class="text-secondary font-bold text-xs">Média 4h</span>
-</div>
-</div>
-<div class="bg-white p-6 border-b-4 border-error custom-shadow">
-<p class="text-on-surface-variant font-bold text-xs mb-2">ALTO RISCO DETECTADO</p>
-<div class="flex justify-between items-end">
-<h3 class="text-3xl font-bold text-error">08</h3>
-<span class="text-error font-bold text-xs">Crítico</span>
-</div>
-</div>
-<div class="bg-white p-6 border-b-4 border-primary custom-shadow">
-<p class="text-on-surface-variant font-bold text-xs mb-2">EXPORTADOS (SHEETS)</p>
-<div class="flex justify-between items-end">
-<h3 class="text-3xl font-bold">946</h3>
-<span class="text-primary font-bold text-xs">Sincronizado</span>
-</div>
-</div>
-</div>
-<div class="bg-white border-l-4 border-secondary custom-shadow overflow-hidden">
-<div class="p-6 border-b border-border-subtle flex justify-between items-center">
-<h2 class="text-xl font-bold text-primary">Importações Recentes</h2>
-<input class="px-4 py-2 border border-border-subtle rounded text-sm w-64" placeholder="Buscar ID do lote..." type="text"/>
-</div>
-<div class="overflow-x-auto">
-<table class="w-full text-left border-collapse">
-<thead class="bg-primary text-white font-bold text-xs">
-<tr>
-<th class="px-6 py-4">ID</th>
-<th class="px-6 py-4">IMÓVEL</th>
-<th class="px-6 py-4">VALOR</th>
-<th class="px-6 py-4">STATUS</th>
-<th class="px-6 py-4">AÇÕES</th>
-</tr>
-</thead>
-<tbody class="zebra-stripe text-sm">
-<tr>
-<td class="px-6 py-4 font-mono">#CRT-8821</td>
-<td class="px-6 py-4">Lakeside Plaza Retail</td>
-<td class="px-6 py-4">R$ 4.250.000</td>
-<td class="px-6 py-4"><span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-[10px] font-bold">LIBERADO</span></td>
-<td class="px-6 py-4"><button class="text-primary font-bold hover:underline" onclick="switchView('analise')">Ver Detalhes</button></td>
-</tr>
-<tr>
-<td class="px-6 py-4 font-mono">#CRT-8822</td>
-<td class="px-6 py-4">Mountain View Ind. Park</td>
-<td class="px-6 py-4">R$ 12.800.000</td>
-<td class="px-6 py-4"><span class="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-[10px] font-bold">EM REVISÃO</span></td>
-<td class="px-6 py-4"><button class="text-primary font-bold hover:underline" onclick="switchView('analise')">Analisar</button></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-</div>
-<!-- VIEW: IMPORTAÇÃO -->
-<div class="view-section" id="view-importacao">
-<h1 class="font-headline-lg text-headline-lg text-on-surface mb-stack-md">Central de Importação</h1>
-<p class="text-on-surface-variant mb-stack-lg">Faça o upload de matrículas (PDF) para processamento via Inteligência Artificial.</p>
-<div class="grid grid-cols-12 gap-gutter">
-<div class="col-span-12 lg:col-span-8 bg-white p-8 border-2 border-dashed border-primary/20 rounded-xl flex flex-col items-center justify-center min-h-[400px]">
-<span class="material-symbols-outlined text-primary text-[64px] mb-4">cloud_upload</span>
-<h3 class="text-xl font-bold text-primary mb-2">Arraste seus arquivos PDF aqui</h3>
-<p class="text-on-surface-variant text-sm mb-6 text-center max-w-md">Ou clique para selecionar arquivos do seu computador. Limite de 50MB por lote.</p>
-<button class="bg-primary text-white font-bold px-8 py-3 rounded-lg shadow-md hover:bg-primary/90 transition-all">Selecionar Arquivos</button>
-</div>
-<div class="col-span-12 lg:col-span-4 space-y-gutter">
-<div class="bg-white p-6 custom-shadow rounded-lg">
-<h4 class="font-bold text-primary mb-4 border-b pb-2">Configuração do Agente IA</h4>
-<div class="space-y-4">
-<div>
-<label class="block text-xs font-bold mb-1">MODELO DE ANÁLISE</label>
-<select class="w-full border-border-subtle rounded text-sm p-2">
-<option>Especialista Imobiliário v4 (Padrão)</option>
-<option>Análise de Risco Rural v2</option>
-<option>Diligência Expressa</option>
-</select>
-</div>
-<div class="flex items-center gap-2">
-<input checked="" class="text-secondary rounded" type="checkbox"/>
-<span class="text-sm">Extração Automática de Dados</span>
-</div>
-<div class="flex items-center gap-2">
-<input checked="" class="text-secondary rounded" type="checkbox"/>
-<span class="text-sm">Cruzamento com Índices de Mercado</span>
-</div>
-</div>
-</div>
-<div class="bg-secondary text-white p-6 rounded-lg custom-shadow">
-<h4 class="font-bold mb-2 flex items-center gap-2">
-<span class="material-symbols-outlined">lightbulb</span> Dica de Processamento
-                        </h4>
-<p class="text-xs opacity-90 leading-relaxed">Arquivos com OCR nativo (gerados por computador) são processados 3x mais rápido que escaneamentos manuais.</p>
-</div>
-</div>
-</div>
-</div>
-<!-- VIEW: ANÁLISE DETALHADA -->
-<div class="view-section" id="view-analise">
-<div class="flex items-center gap-4 mb-stack-md">
-<button class="text-primary font-bold flex items-center gap-1 hover:underline" onclick="switchView('dashboard')">
-<span class="material-symbols-outlined text-[18px]">arrow_back</span> Voltar
-                </button>
-<div class="h-4 w-px bg-border-subtle"></div>
-<h1 class="text-2xl font-bold text-on-surface">Análise: #CRT-8822 - Mountain View Ind. Park</h1>
-</div>
-<div class="bg-white custom-shadow rounded-xl overflow-hidden border border-border-subtle">
-<!-- Internal Tabs -->
-<div class="flex border-b border-border-subtle bg-surface-gray">
-<button class="px-8 py-4 text-sm font-bold border-b-2 border-secondary text-primary" id="tab-proprietarios">Proprietários e Devedores</button>
-<button class="px-8 py-4 text-sm font-bold text-on-surface-variant hover:text-primary transition-colors">Resumo do Imóvel</button>
-<button class="px-8 py-4 text-sm font-bold text-on-surface-variant hover:text-primary transition-colors">Dossiê de Crédito</button>
-<button class="px-8 py-4 text-sm font-bold text-on-surface-variant hover:text-primary transition-colors">Parecer Consolidado</button>
-</div>
-<div class="p-8">
-<div class="grid grid-cols-1 md:grid-cols-2 gap-12">
-<div>
-<h3 class="font-bold text-primary mb-4 flex items-center gap-2">
-<span class="material-symbols-outlined text-[20px]">person</span> Cadeia Dominial Recente
-                            </h3>
-<div class="space-y-4">
-<div class="p-4 border-l-4 border-primary bg-surface-container-low rounded-r">
-<div class="flex justify-between items-start mb-2">
-<p class="font-bold text-sm">Atual: Industrial Holdings S.A.</p>
-<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">VÁLIDO</span>
-</div>
-<p class="text-xs text-on-surface-variant">Aquisição em 12/05/2019 via Escritura Pública (Livro 234-A).</p>
-</div>
-<div class="p-4 border-l-4 border-secondary bg-surface-container-low rounded-r">
-<div class="flex justify-between items-start mb-2">
-<p class="font-bold text-sm">Anterior: José Carlos de Oliveira</p>
-<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold">HISTÓRICO</span>
-</div>
-<p class="text-xs text-on-surface-variant">Transferência de propriedade por compra e venda realizada em 2010.</p>
-</div>
-</div>
-</div>
-<div>
-<h3 class="font-bold text-error mb-4 flex items-center gap-2">
-<span class="material-symbols-outlined text-[20px]">warning</span> Alertas de Risco Jurídico
-                            </h3>
-<div class="space-y-4">
-<div class="flex gap-4 p-4 border border-error/20 bg-error/5 rounded-lg">
-<span class="material-symbols-outlined text-error">priority_high</span>
-<div>
-<p class="font-bold text-sm text-error">Processo Trabalhista Detectado</p>
-<p class="text-xs text-on-surface-variant mt-1">Ação 0012345-67.2023.5.04.0001 com valor de causa superior a 50% do imóvel.</p>
-</div>
-</div>
-<div class="flex gap-4 p-4 border border-secondary/20 bg-secondary/5 rounded-lg">
-<span class="material-symbols-outlined text-secondary">info</span>
-<div>
-<p class="font-bold text-sm text-secondary">Indisponibilidade de Bens (AV-8)</p>
-<p class="text-xs text-on-surface-variant mt-1">Averbação de indisponibilidade datada de Jan/2024. Requer verificação.</p>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<!-- VIEW: CONFIGURAÇÕES -->
-<div class="view-section" id="view-configuracoes">
-<h1 class="font-headline-lg text-headline-lg text-on-surface mb-stack-md">Configurações de Sistema</h1>
-<p class="text-on-surface-variant mb-stack-lg">Gerencie integrações e mapeamento de dados para o Google Sheets.</p>
-<div class="bg-white custom-shadow rounded-xl overflow-hidden border border-border-subtle max-w-3xl">
-<div class="p-6 border-b border-border-subtle">
-<h3 class="font-bold text-primary mb-1">Mapeamento Google Sheets</h3>
-<p class="text-xs text-on-surface-variant">Defina para qual planilha e aba os resultados devem ser exportados automaticamente.</p>
-</div>
-<div class="p-6 space-y-6">
-<div>
-<label class="block text-xs font-bold mb-2">URL DA PLANILHA DE DESTINO</label>
-<input class="w-full border-border-subtle rounded p-3 text-sm" type="text" value="https://docs.google.com/spreadsheets/d/1A_z9x_Ym..."/>
-</div>
-<div class="grid grid-cols-2 gap-4">
-<div>
-<label class="block text-xs font-bold mb-2">ABA PRINCIPAL</label>
-<input class="w-full border-border-subtle rounded p-3 text-sm" type="text" value="DB_IMPORTACOES"/>
-</div>
-<div>
-<label class="block text-xs font-bold mb-2">ABA DE ALERTAS</label>
-<input class="w-full border-border-subtle rounded p-3 text-sm" type="text" value="RISCO_LOG"/>
-</div>
-</div>
-<div class="pt-4 border-t">
-<button class="bg-primary text-white font-bold px-6 py-3 rounded shadow hover:bg-primary/90 transition-all flex items-center gap-2">
-<span class="material-symbols-outlined">save</span> Salvar Configurações
-                        </button>
-</div>
-</div>
-</div>
-</div>
-</div>
-</main>
-<!-- Floating Action Button (FAB) -->
-<button class="fixed bottom-8 right-8 w-14 h-14 bg-secondary text-white rounded-full custom-shadow flex items-center justify-center hover:scale-110 transition-transform cursor-pointer">
-<span class="material-symbols-outlined text-[28px]">chat_bubble</span>
-</button>
-<script>
-    /**
-     * SPA View Switching Logic
-     */
-    function switchView(viewId) {
-        // Hide all views
-        document.querySelectorAll('.view-section').forEach(view => {
-            view.classList.remove('active');
-        });
-        
-        // Show target view
-        const targetView = document.getElementById('view-' + viewId);
-        if (targetView) {
-            targetView.classList.add('active');
-        }
+            <div class="h-5 w-px bg-border-gray"></div>
+            <h2 id="analise-detalhada-titulo" class="text-xl font-bold text-text-dark">Laudo Ativo</h2>
+          </div>
+          <div class="flex gap-2">
+            <button id="btn-export-sheets-active" onclick="triggerSheetsExport()" class="bg-primary-green hover:bg-primary-green/95 text-white text-xs font-bold px-4 py-2.5 rounded shadow flex items-center gap-2 transition-all">
+              <i data-lucide="external-link" class="w-4 h-4"></i>
+              <span>Sincronizar Sheets</span>
+            </button>
+          </div>
+        </div>
 
-        // Update Top Navigation UI
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.classList.remove('nav-link-active');
-        });
-        const activeNavLink = document.getElementById('nav-' + viewId);
-        if (activeNavLink) activeNavLink.classList.add('nav-link-active');
+        <!-- Summary Banner Card -->
+        <div class="bg-white rounded-lg soft-shadow border border-border-gray p-6">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 divide-y md:divide-y-0 md:divide-x divide-border-gray">
+            <div class="flex flex-col gap-1 pr-4">
+              <span class="text-[10px] text-text-gray font-black uppercase tracking-wider">Imóvel</span>
+              <span id="detail-endereco" class="text-sm font-bold text-text-dark truncate"></span>
+              <span id="detail-comarca" class="text-xs text-text-gray"></span>
+            </div>
 
-        // Update Sidebar UI
-        document.querySelectorAll('.sidebar-link').forEach(link => {
-            link.classList.remove('sidebar-link-active', 'text-white');
-            link.classList.add('text-on-surface-variant');
-        });
-        const activeSideLink = document.getElementById('side-' + viewId);
-        if (activeSideLink) {
-            activeSideLink.classList.add('sidebar-link-active', 'text-white');
-            activeSideLink.classList.remove('text-on-surface-variant');
-        }
-        
-        // Scroll to top
-        window.scrollTo(0, 0);
+            <div class="flex flex-col gap-1 md:pl-6 pr-4">
+              <span class="text-[10px] text-text-gray font-black uppercase tracking-wider">Avaliação Estimada</span>
+              <span id="detail-valor" class="text-sm font-bold text-text-dark"></span>
+              <span id="detail-matricula" class="text-xs text-text-gray"></span>
+            </div>
+
+            <div class="flex flex-col gap-1 md:pl-6 pr-4">
+              <span class="text-[10px] text-text-gray font-black uppercase tracking-wider">Risco Geral / Rating</span>
+              <div class="flex items-center gap-2">
+                <span id="detail-risco" class="text-sm font-bold text-text-dark"></span>
+                <span id="detail-rating" class="text-[10px] text-text-gray bg-bg-body px-1 py-0.5 rounded border"></span>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1 md:pl-6">
+              <span class="text-[10px] text-text-gray font-black uppercase tracking-wider">Status Geral</span>
+              <span id="detail-status" class="self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs inside Analysis view -->
+        <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden">
+          <div class="flex border-b border-border-gray bg-bg-body/50 overflow-x-auto">
+            <button id="tab-btn-proprietarios" onclick="switchAnalysisTab('proprietarios')" class="px-6 py-4 text-xs font-bold border-b-2 border-accent-orange text-primary-green">
+              Proprietários &amp; Devedores
+            </button>
+            <button id="tab-btn-imovel" onclick="switchAnalysisTab('imovel')" class="px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark">
+              Resumo do Imóvel
+            </button>
+            <button id="tab-btn-alertas" onclick="switchAnalysisTab('alertas')" class="px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark flex items-center gap-1.5">
+              <span>Alertas de Risco</span>
+              <span id="alertas-badge-count" class="bg-danger-red text-white text-[9px] px-1.5 py-0.2 rounded font-black">0</span>
+            </button>
+            <button id="tab-btn-parecer" onclick="switchAnalysisTab('parecer')" class="px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark">
+              Parecer Consolidado
+            </button>
+          </div>
+
+          <div class="p-6">
+            
+            <!-- Tab Contents: Proprietarios -->
+            <div id="tab-content-proprietarios" class="space-y-4">
+              <h4 class="font-bold text-sm text-primary-green uppercase mb-3 flex items-center gap-2">
+                <i data-lucide="users" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Quadro Societário e Co-proprietários Identificados
+              </h4>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                  <thead class="bg-bg-body text-text-dark font-bold border-b border-border-gray">
+                    <tr>
+                      <th class="px-4 py-3">Nome do Titular</th>
+                      <th class="px-4 py-3">CPF / CNPJ</th>
+                      <th class="px-4 py-3">Fração Ideal</th>
+                      <th class="px-4 py-3">Estado Civil</th>
+                      <th class="px-4 py-3">Situação Cadastral</th>
+                    </tr>
+                  </thead>
+                  <tbody id="detail-proprietarios-tbody" class="divide-y divide-border-gray">
+                    <!-- Dinâmico -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Tab Contents: Imovel -->
+            <div id="tab-content-imovel" class="hidden space-y-4">
+              <h4 class="font-bold text-sm text-primary-green uppercase mb-3">Informações Gerais de Cadastro</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                <div class="space-y-3 bg-bg-body p-4 rounded-lg">
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Cartório / Ofício</span>
+                    <p id="info-cartorio" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Comarca</span>
+                    <p id="info-comarca" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Tipo do Imóvel</span>
+                    <p id="info-tipo" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Data de Emissão da Certidão</span>
+                    <p id="info-data-emissao" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div id="info-incra-wrap" class="hidden">
+                    <span class="text-xs text-text-gray uppercase font-bold">Cadastro INCRA / CCIR</span>
+                    <p id="info-incra" class="font-semibold text-text-dark"></p>
+                  </div>
+                </div>
+                <div class="space-y-3 bg-bg-body p-4 rounded-lg">
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Área Total do Terreno</span>
+                    <p id="info-area" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Área Construída / Benfeitorias</span>
+                    <p id="info-area-construida" class="font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">Endereço / Localização</span>
+                    <p id="info-endereco" class="font-semibold text-text-dark"></p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Confrontações -->
+              <div id="info-confrontacoes-wrap" class="hidden bg-white border border-border-gray rounded-lg overflow-hidden">
+                <div class="px-4 py-3 border-b border-border-gray bg-bg-body">
+                  <span class="text-xs text-primary-green uppercase font-bold">Tabela de Confrontações (Perímetro)</span>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead class="text-text-dark font-bold border-b border-border-gray">
+                      <tr>
+                        <th class="px-4 py-2">Posição</th>
+                        <th class="px-4 py-2">Confrontante / Vizinho</th>
+                        <th class="px-4 py-2">Medida</th>
+                      </tr>
+                    </thead>
+                    <tbody id="info-confrontacoes-tbody" class="divide-y divide-border-gray"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="bg-bg-body p-4 rounded-lg">
+                <span class="text-xs text-text-gray uppercase font-bold">Descrição da Matrícula</span>
+                <p id="info-descricao" class="text-text-dark leading-relaxed text-xs mt-1"></p>
+              </div>
+
+              <!-- Descrição Legal (minuta) -->
+              <div id="info-descricao-legal-wrap" class="hidden bg-primary-green/5 border border-primary-green/10 p-4 rounded-lg">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs text-primary-green uppercase font-bold">Descrição Legal (pronta para contrato)</span>
+                  <button onclick="copyDescricaoLegal()" class="text-[10px] font-bold text-primary-green hover:underline flex items-center gap-1">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar
+                  </button>
+                </div>
+                <p id="info-descricao-legal" class="text-text-dark leading-relaxed text-xs whitespace-pre-line"></p>
+              </div>
+            </div>
+
+            <!-- Tab Contents: Alertas -->
+            <div id="tab-content-alertas" class="hidden space-y-5">
+
+              <!-- Ônus e Gravames registrados -->
+              <div>
+                <h4 class="font-bold text-sm text-primary-green uppercase mb-3 flex items-center gap-2">
+                  <i data-lucide="scale" class="w-4.5 h-4.5 text-accent-orange"></i>
+                  Situação Jurídica: Ônus e Gravames Registrados
+                </h4>
+                <div id="detail-gravames-wrap" class="overflow-x-auto border border-border-gray rounded-lg">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead class="bg-bg-body text-text-dark font-bold border-b border-border-gray">
+                      <tr>
+                        <th class="px-4 py-3">Registro (R/AV)</th>
+                        <th class="px-4 py-3">Tipo de Gravame</th>
+                        <th class="px-4 py-3">Credor / Beneficiário</th>
+                        <th class="px-4 py-3">Vencimento / Obs.</th>
+                      </tr>
+                    </thead>
+                    <tbody id="detail-gravames-tbody" class="divide-y divide-border-gray"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Alertas de risco/compliance -->
+              <div>
+                <h4 class="font-bold text-sm text-danger-red uppercase mb-3 flex items-center gap-2">
+                  <i data-lucide="shield-alert" class="w-5 h-5 text-accent-orange"></i>
+                  Alertas de Risco e Compliance Identificados pela IA
+                </h4>
+                <div id="detail-alertas-list" class="space-y-3">
+                  <!-- Dinâmico -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab Contents: Parecer -->
+            <div id="tab-content-parecer" class="hidden space-y-4">
+              <h4 class="font-bold text-sm text-primary-green uppercase mb-3">Parecer Jurídico do Analista Cresol</h4>
+              <div class="p-6 bg-primary-green/5 border border-primary-green/10 rounded-lg">
+                <p id="info-parecer" class="text-sm text-text-dark leading-relaxed whitespace-pre-line"></p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. VIEW: CONFIGURAÇÕES -->
+      <div id="view-configuracoes" class="hidden space-y-8">
+        <div>
+          <h2 class="text-2xl font-bold text-primary-green">Configurações de Integração</h2>
+          <p class="text-sm text-text-gray mt-1">Gerencie a conexão direta com o Google Sheets e chaves API.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          <!-- Google Sheets Mapping -->
+          <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden">
+            <div class="p-6 border-b border-border-gray">
+              <h3 class="font-bold text-primary-green flex items-center gap-2 text-sm uppercase tracking-wider">
+                <i data-lucide="database" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Mapeamento Google Sheets
+              </h3>
+            </div>
+            <form id="sheets-config-form" onsubmit="saveSheetsConfig(event)" class="p-6 space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">URL da Planilha de Destino</label>
+                <input type="text" id="config-spreadsheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Aba Principal</label>
+                  <input type="text" id="config-aba-principal" placeholder="DB_IMPORTACOES" class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Aba Alertas</label>
+                  <input type="text" id="config-aba-alertas" placeholder="RISCO_LOG" class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none">
+                </div>
+              </div>
+
+              <button type="submit" class="bg-primary-green hover:bg-primary-green/95 text-white font-bold text-xs px-5 py-3 rounded-lg shadow-md transition-all flex items-center gap-2">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span>Salvar Configurações</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Gemini API Configuration -->
+          <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden">
+            <div class="p-6 border-b border-border-gray">
+              <h3 class="font-bold text-primary-green flex items-center gap-2 text-sm uppercase tracking-wider">
+                <i data-lucide="shield-alert" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Segurança &amp; Conexão Gemini
+              </h3>
+            </div>
+            <div class="p-6 space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Sua API Key do Gemini (Opcional)</label>
+                <input type="password" id="config-gemini-key" placeholder="Digite sua chave de API para o cérebro real..." class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">
+                  A chave ficará salva com segurança nas propriedades do Script Google do seu projeto. Caso deixe em branco, o sistema utilizará um motor de análise simulado altamente estruturado para demonstração técnica Cresol.
+                </p>
+              </div>
+
+              <div id="api-status-badge" class="p-3 rounded-lg bg-bg-body border text-xs flex items-center gap-2">
+                <!-- badge info dynamic -->
+              </div>
+
+              <button onclick="saveApiKey()" class="bg-accent-orange hover:bg-accent-orange/95 text-white font-bold text-xs px-5 py-3 rounded-lg shadow-md transition-all flex items-center gap-2">
+                <i data-lucide="key" class="w-4 h-4"></i>
+                <span>Atualizar Chave</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // State variables
+    let currentView = 'dashboard';
+    let activeAnalysisTab = 'proprietarios';
+    let analyses = [];
+    let selectedAnalysis = null;
+    let selectedFileBase64 = ''; // DataURL do PDF/imagem anexado, enviado à IA para OCR
+    let config = {
+      spreadsheetUrl: '',
+      abaPrincipal: '',
+      abaAlertas: '',
+      geminiKeyConfigured: false
+    };
+
+    // Sample data to simulate PDF text
+    const sampleTexts = {
+      rural: `MATRÍCULA Nº 14.880 - OFÍCIO DE REGISTRO DE IMÓVEIS DE SORRISO - MT.
+Imóvel: Uma área de terras rurais com 420,0000 hectares, denominada 'Gleba Cedro', desmembrada da Fazenda Bela Vista, situada no Município de Sorriso - MT. Limites e confrontações: Partindo do marco M-1, segue confrontando com terras de Waldir Schultz...
+Proprietário: Egon Schultz, brasileiro, casado, produtor rural, portador do CPF nº 444.555.666-12, residente e domiciliado na Fazenda Cedro.
+Ônus e Gravames:
+AV-4/14.880 - Contrato de Arrendamento Agrícola em favor de Cooperativa Agroindustrial para plantio de algodão com prazo determinado até Junho de 2027.
+AV-6/14.880 - Cadastro Ambiental Rural (CAR) homologado sob o nº MT-5107909-66F5.B678, atestando 20% de área de Reserva Legal totalmente preservada e regularizada. CCIR e ITR do exercício de 2025 rigorosamente quitados. Georreferenciamento devidamente certificado.`,
+      
+      urbano: `MATRÍCULA Nº 22.315 - 1º OFÍCIO DE REGISTRO DE IMÓVEIS DE PORTO ALEGRE - RS.
+Imóvel: Apartamento nº 402, localizado no 4º andar do Edifício Residencial Gonçalo, situado na Rua Gonçalo de Carvalho, nº 320, bairro Moinhos de Vento, com área privativa de 145,00 m², correspondendo-lhe a fração ideal de 0,085 no terreno e coisas comuns.
+Proprietários: Julio Cesar Brandão, brasileiro, divorciado, empresário, CPF nº 777.888.999-11 (fração de 50%) e Marta Helena Brandão, brasileira, solteira, CPF nº 888.999.000-22 (fração de 50%).
+Ônus e Registros:
+R-7/22.315 - Adjudicação por Herança dos bens deixados por Orlando Brandão.
+AV-9/22.315 - PENHORA JUDICIAL determinada pelo Juízo da 12ª Vara Cível de Porto Alegre, nos autos do Processo de Execução nº 5001245-88.2023.8.21.0001, movido por Condomínio Edifício Gonçalo, para garantia do débito de condomínio de R$ 94.000,00.
+AV-11/22.315 - INDISPONIBILIDADE DE BENS decretada contra o co-proprietário Julio Cesar Brandão pelo Juiz Federal da 1ª Vara Cível de Curitiba, nos autos da Execução Fiscal nº 5012344-99.2024.4.04.7100, no valor acumulado de R$ 420.000,00.`,
+      
+      industrial: `MATRÍCULA Nº 18.244 - OFÍCIO DE REGISTRO DE IMÓVEIS DE CHAPECÓ - SC.
+Imóvel: Uma área de terras com 45.000,00 m² (4.5 hectares), situada no Distrito Industrial, confrontando com a Marginal da Rodovia BR-282, KM 540, contendo um galpão de estrutura metálica para fins industriais com 12.000,00 m² de área construída.
+Proprietário: Industrial Holdings S.A., CNPJ nº 11.222.333/0001-44, com sede em Chapecó - SC.
+Registros e Averbações:
+AV-4/18.244 - SERVIDÃO DE PASSAGEM perpétua instituída em favor da concessionária de energia elétrica para passagem de Linha de Transmissão de Alta Tensão, cobrindo uma faixa de 15% da área total útil do imóvel.
+AV-7/18.244 - Existência de Ação Trabalhista sob o nº 0012345-67.2023.5.04.0001 distribuída pela 2ª Vara do Trabalho de Chapecó, movida por sindicato de classe contra o proprietário, com valor estimado em R$ 6.000,00.
+AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trabalho.`
+    };
+
+    // Initialization on window load
+    window.onload = function() {
+      lucide.createIcons();
+      loadInitialData();
+    };
+
+    // Load initial config and analyses from Google Apps Script
+    function loadInitialData() {
+      showLoading("Carregando base de dados...");
+      
+      // Call Google Apps Script backend if running inside AppScript environment
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(data) {
+            analyses = data;
+            loadConfigData();
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao carregar dados do Apps Script: " + err);
+          })
+          .listarAnalises();
+      } else {
+        // Fallback para preview local caso aberto fora do Apps Script
+        analyses = [
+          {
+            id: "CRT-8821",
+            timestamp: new Date().toISOString(),
+            nomeArquivo: "Matricula_Lakeside_Plaza.pdf",
+            status: "LIBERADO",
+            metodo: "Especialista Imobiliário v4",
+            imovel: {
+              matricula: "34.512",
+              comarca: "Cascavel - PR",
+              valor: "R$ 4.250.000,00",
+              risco: "1.2/10",
+              rating: "AAA+",
+              endereco: "Avenida Brasil, 4550, Centro, Cascavel - PR",
+              area: "1.250 m²",
+              descricaoCurta: "Terreno urbano comercial de formato regular contendo edificação em alvenaria com 850 m² de área construída, destinado a comércio."
+            },
+            proprietarios: [
+              { nome: "Carlos Alberto Santos", documento: "123.456.789-00", participacao: "60%", status: "REGULAR" },
+              { nome: "Investimentos Cresol S.A.", documento: "00.123.456/0001-99", participacao: "40%", status: "REGULAR" }
+            ],
+            alertas: [
+              { titulo: "CAR Homologado", descricao: "Cadastro Ambiental Rural validado e regularizado.", tipo: "INFORMAÇÃO" }
+            ],
+            cadeiaDominial: [],
+            parecerConsolidado: "O imóvel apresenta excelente liquidez e solidez documental. Aprovado."
+          }
+        ];
+        loadConfigData();
+      }
     }
 
-    // Micro-interactions and initialization
-    window.onload = () => {
-        console.log('Cresol Real Estate Intelligence Loaded');
-    };
-</script>
-</body></html>
+    function loadConfigData() {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(conf) {
+            config = conf;
+            applyConfigToUI();
+            renderTable();
+            updateKPIs();
+            hideLoading();
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao carregar configurações: " + err);
+          })
+          .getSystemConfig();
+      } else {
+        hideLoading();
+        applyConfigToUI();
+        renderTable();
+        updateKPIs();
+      }
+    }
+
+    function applyConfigToUI() {
+      document.getElementById('config-spreadsheet-url').value = config.spreadsheetUrl || '';
+      document.getElementById('config-aba-principal').value = config.abaPrincipal || 'DB_IMPORTACOES';
+      document.getElementById('config-aba-alertas').value = config.abaAlertas || 'RISCO_LOG';
+      
+      const badge = document.getElementById('api-status-badge');
+      if (config.geminiKeyConfigured) {
+        badge.className = "p-3 rounded-lg bg-success-green/10 text-success-green border border-success-green/20 text-xs flex items-center gap-2";
+        badge.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> <strong>Chave Gemini Ativa!</strong> Suas análises serão processadas pela inteligência artificial real.`;
+      } else {
+        badge.className = "p-3 rounded-lg bg-accent-orange/10 text-accent-orange border border-accent-orange/20 text-xs flex items-center gap-2";
+        badge.innerHTML = `<i data-lucide="info" class="w-4 h-4"></i> <strong>Modo Simulação Inteligente</strong>. Insira sua chave Gemini API para habilitar a inteligência real.`;
+      }
+      lucide.createIcons();
+    }
+
+    // Switch views SPA
+    function switchView(viewId) {
+      currentView = viewId;
+      document.getElementById('view-dashboard').classList.add('hidden');
+      document.getElementById('view-importacao').classList.add('hidden');
+      document.getElementById('view-analise').classList.add('hidden');
+      document.getElementById('view-configuracoes').classList.add('hidden');
+
+      document.getElementById('view-' + viewId).classList.remove('hidden');
+
+      // Update navbar state
+      const navIds = ['dashboard', 'importacao', 'analise', 'configuracoes'];
+      navIds.forEach(id => {
+        const btn = document.getElementById('nav-' + id);
+        if (btn) {
+          if (id === viewId) {
+            btn.className = "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium bg-accent-orange text-white transition-colors";
+          } else {
+            btn.className = "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-text-gray hover:bg-bg-body hover:text-text-dark transition-colors";
+          }
+        }
+      });
+      lucide.createIcons();
+    }
+
+    // Select pre-loaded sample
+    function selectSample(type) {
+      selectedFileBase64 = ''; // amostra é texto puro, não há arquivo binário
+      document.getElementById('document-textarea').value = sampleTexts[type];
+      document.getElementById('selected-file-label').classList.remove('hidden');
+      document.getElementById('gas-file-name').innerText = "Matricula_Amostra_" + type.toUpperCase() + ".txt";
+      showToast("success", "Amostra '" + type + "' carregada com sucesso para análise!");
+    }
+
+    // Handle Local File Selected (PDF, imagem/foto ou TXT)
+    function handleFileSelected(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      // A requisição inline do Gemini aceita ~20MB; barra arquivos grandes antes de enviar.
+      const MAX_BYTES = 18 * 1024 * 1024;
+      if (file.size > MAX_BYTES) {
+        event.target.value = '';
+        showToast("error", "Arquivo muito grande (máx. 18MB). Reduza a resolução da foto ou comprima o PDF.");
+        return;
+      }
+
+      document.getElementById('selected-file-label').classList.remove('hidden');
+      document.getElementById('gas-file-name').innerText = file.name;
+
+      const lowerName = file.name.toLowerCase();
+      const isText = file.type === 'text/plain' || lowerName.endsWith('.txt');
+
+      const reader = new FileReader();
+      if (isText) {
+        // Transcrição em texto: preenche o campo e não envia arquivo binário
+        selectedFileBase64 = '';
+        reader.onload = function(e) {
+          document.getElementById('document-textarea').value = e.target.result;
+          showToast("success", "Arquivo de texto carregado e transcrito para o campo!");
+        };
+        reader.readAsText(file);
+      } else {
+        // PDF ou foto/imagem da matrícula: envia como base64 (DataURL) para a IA fazer o OCR
+        reader.onload = function(e) {
+          selectedFileBase64 = e.target.result;
+          showToast("success", "Documento '" + file.name + "' anexado. A IA fará a leitura (OCR) do arquivo ao enviar.");
+        };
+        reader.onerror = function() {
+          selectedFileBase64 = '';
+          showToast("error", "Não foi possível ler o arquivo selecionado.");
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    // Limpa o formulário de importação após um envio bem-sucedido
+    function resetImportForm() {
+      selectedFileBase64 = '';
+      document.getElementById('document-textarea').value = '';
+      const fileInput = document.getElementById('gas-file-input');
+      if (fileInput) fileInput.value = '';
+      document.getElementById('gas-file-name').innerText = '';
+      document.getElementById('selected-file-label').classList.add('hidden');
+    }
+
+    // Clear filters
+    function clearFilters() {
+      document.getElementById('search-input').value = '';
+      document.getElementById('status-filter').value = 'TODOS';
+      renderTable();
+    }
+
+    // Calculate metrics
+    function updateKPIs() {
+      document.getElementById('kpi-total').innerText = analyses.length;
+      document.getElementById('kpi-revisao').innerText = analyses.filter(a => a.status === 'EM REVISÃO').length;
+      document.getElementById('kpi-rejeitados').innerText = analyses.filter(a => a.status === 'REJEITADO').length;
+      document.getElementById('kpi-sheets').innerText = config.spreadsheetUrl ? analyses.length : "0";
+    }
+
+    // Render tabular records
+    function renderTable() {
+      const tbody = document.getElementById('analyses-table-body');
+      tbody.innerHTML = '';
+
+      const query = document.getElementById('search-input').value.toLowerCase();
+      const statusFilter = document.getElementById('status-filter').value;
+
+      const filtered = analyses.filter(item => {
+        const matchesStatus = statusFilter === 'TODOS' || item.status === statusFilter;
+        const matchesSearch = item.id.toLowerCase().includes(query) ||
+                              item.imovel.comarca.toLowerCase().includes(query) ||
+                              item.imovel.endereco.toLowerCase().includes(query) ||
+                              item.proprietarios.some(p => p.nome.toLowerCase().includes(query));
+        return matchesStatus && matchesSearch;
+      });
+
+      document.getElementById('table-stats').innerText = `Mostrando ${filtered.length} de ${analyses.length} lotes`;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="p-8 text-center text-text-gray font-medium">
+              Nenhuma análise de matrícula encontrada na base de dados.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-primary-green/5 cursor-pointer transition-colors";
+        tr.onclick = () => openAnalysis(item);
+
+        const badgeClass = item.status === 'LIBERADO' 
+          ? 'bg-success-green/10 text-success-green border border-success-green/20' 
+          : item.status === 'EM REVISÃO' 
+          ? 'bg-accent-orange/10 text-accent-orange border border-accent-orange/20' 
+          : 'bg-danger-red/10 text-danger-red border border-danger-red/20';
+
+        tr.innerHTML = `
+          <td class="px-6 py-4 font-mono font-bold text-primary-green">#${item.id}</td>
+          <td class="px-6 py-4 text-text-gray text-xs whitespace-nowrap">${new Date(item.timestamp).toLocaleString('pt-BR')}</td>
+          <td class="px-6 py-4 text-text-dark font-medium">${item.nomeArquivo}</td>
+          <td class="px-6 py-4 text-text-dark">${item.imovel.comarca}</td>
+          <td class="px-6 py-4 font-semibold text-text-dark whitespace-nowrap">${item.imovel.valor}</td>
+          <td class="px-6 py-4 whitespace-nowrap">
+            <strong class="text-text-dark">${item.imovel.risco}</strong>
+            <span class="text-[10px] text-text-gray ml-1 bg-bg-body px-1 rounded border">${item.imovel.rating}</span>
+          </td>
+          <td class="px-6 py-4 text-center whitespace-nowrap">
+            <span class="px-3 py-1 rounded-full text-[10px] font-black tracking-wider ${badgeClass}">
+              ${item.status}
+            </span>
+          </td>
+          <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-end gap-2">
+              <button onclick="triggerSheetsExport('${item.id}')" title="Sincronizar Sheets" class="p-1.5 text-primary-green hover:bg-primary-green/10 rounded transition-all">
+                <i data-lucide="external-link" class="w-4 h-4"></i>
+              </button>
+              <button onclick="triggerDelete('${item.id}')" title="Excluir" class="p-1.5 text-danger-red hover:bg-danger-red/10 rounded transition-all">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      lucide.createIcons();
+    }
+
+    // Open detailed analysis report
+    function openAnalysis(item) {
+      selectedAnalysis = item;
+      document.getElementById('nav-analise').classList.remove('hidden');
+      document.getElementById('active-laudo-id').innerText = "#" + item.id;
+      
+      document.getElementById('analise-detalhada-titulo').innerText = "Laudo Técnico: #" + item.id;
+      document.getElementById('detail-endereco').innerText = item.imovel.endereco;
+      document.getElementById('detail-comarca').innerText = "Comarca: " + item.imovel.comarca;
+      document.getElementById('detail-valor').innerText = item.imovel.valor;
+      document.getElementById('detail-matricula').innerText = "Matrícula: " + item.imovel.matricula;
+      document.getElementById('detail-risco').innerText = item.imovel.risco;
+      document.getElementById('detail-rating').innerText = item.imovel.rating;
+      
+      const statusBadge = document.getElementById('detail-status');
+      statusBadge.innerText = item.status;
+      if (item.status === 'LIBERADO') {
+        statusBadge.className = "self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider bg-success-green/10 text-success-green border border-success-green/20";
+      } else if (item.status === 'EM REVISÃO') {
+        statusBadge.className = "self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider bg-accent-orange/10 text-accent-orange border border-accent-orange/20";
+      } else {
+        statusBadge.className = "self-start text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider bg-danger-red/10 text-danger-red border border-danger-red/20";
+      }
+
+      // Fill tabs
+      // Tab: Proprietarios
+      const pTbody = document.getElementById('detail-proprietarios-tbody');
+      pTbody.innerHTML = '';
+      if (item.proprietarios && item.proprietarios.length > 0) {
+        item.proprietarios.forEach(p => {
+          const sColor = p.status === 'REGULAR' ? 'text-success-green' : p.status === 'ATENÇÃO' ? 'text-accent-orange' : 'text-text-gray';
+          pTbody.innerHTML += `
+            <tr>
+              <td class="px-4 py-3 font-semibold text-text-dark">${p.nome}</td>
+              <td class="px-4 py-3 font-mono">${p.documento || 'Não informado'}</td>
+              <td class="px-4 py-3">${p.participacao || '100%'}</td>
+              <td class="px-4 py-3">${p.estadoCivil || '—'}</td>
+              <td class="px-4 py-3 font-bold ${sColor}">${p.status}</td>
+            </tr>
+          `;
+        });
+      } else {
+        pTbody.innerHTML = `<tr><td colspan="5" class="px-4 py-3 text-center text-text-gray">Nenhum proprietário listado.</td></tr>`;
+      }
+
+      // Tab: Imovel Info
+      const imo = item.imovel || {};
+      document.getElementById('info-cartorio').innerText = imo.cartorio || '—';
+      document.getElementById('info-comarca').innerText = imo.comarca || '—';
+      document.getElementById('info-tipo').innerText = imo.tipo || '—';
+      document.getElementById('info-data-emissao').innerText = imo.dataEmissaoCertidao || '—';
+      document.getElementById('info-area').innerText = imo.area || '—';
+      document.getElementById('info-area-construida').innerText = imo.areaConstruida || '—';
+      document.getElementById('info-endereco').innerText = imo.endereco || '—';
+      document.getElementById('info-descricao').innerText = imo.descricaoCurta || '—';
+
+      // INCRA (só rural)
+      const incraWrap = document.getElementById('info-incra-wrap');
+      if (imo.cadastroIncra) {
+        document.getElementById('info-incra').innerText = imo.cadastroIncra;
+        incraWrap.classList.remove('hidden');
+      } else {
+        incraWrap.classList.add('hidden');
+      }
+
+      // Confrontações
+      const confWrap = document.getElementById('info-confrontacoes-wrap');
+      const confTbody = document.getElementById('info-confrontacoes-tbody');
+      confTbody.innerHTML = '';
+      if (imo.confrontacoes && imo.confrontacoes.length > 0) {
+        imo.confrontacoes.forEach(c => {
+          confTbody.innerHTML += `
+            <tr>
+              <td class="px-4 py-2 font-semibold text-text-dark">${c.posicao || '—'}</td>
+              <td class="px-4 py-2">${c.confrontante || '—'}</td>
+              <td class="px-4 py-2">${c.medida || 'Não informada'}</td>
+            </tr>`;
+        });
+        confWrap.classList.remove('hidden');
+      } else {
+        confWrap.classList.add('hidden');
+      }
+
+      // Descrição legal (minuta)
+      const legalWrap = document.getElementById('info-descricao-legal-wrap');
+      if (imo.descricaoLegal) {
+        document.getElementById('info-descricao-legal').innerText = imo.descricaoLegal;
+        legalWrap.classList.remove('hidden');
+      } else {
+        legalWrap.classList.add('hidden');
+      }
+
+      // Tab: Gravames (ônus reais registrados)
+      const gTbody = document.getElementById('detail-gravames-tbody');
+      gTbody.innerHTML = '';
+      if (item.gravames && item.gravames.length > 0) {
+        item.gravames.forEach(g => {
+          gTbody.innerHTML += `
+            <tr>
+              <td class="px-4 py-3 font-mono font-bold text-text-dark">${g.registro || '—'}</td>
+              <td class="px-4 py-3 text-danger-red font-semibold">${g.tipo || '—'}</td>
+              <td class="px-4 py-3">${g.credor || '—'}</td>
+              <td class="px-4 py-3 text-text-gray">${g.observacao || '—'}</td>
+            </tr>`;
+        });
+      } else {
+        gTbody.innerHTML = `<tr><td colspan="4" class="px-4 py-3 text-center text-success-green font-bold">Livre de ônus — nenhum gravame ativo registrado.</td></tr>`;
+      }
+
+      // Tab: Alertas
+      const alertsDiv = document.getElementById('detail-alertas-list');
+      alertsDiv.innerHTML = '';
+      document.getElementById('alertas-badge-count').innerText = item.alertas ? item.alertas.length : 0;
+      
+      if (item.alertas && item.alertas.length > 0) {
+        item.alertas.forEach(a => {
+          const typeClass = a.tipo === 'CRÍTICO' ? 'border-left-red bg-danger-red/5 text-danger-red' : 'border-left-orange bg-accent-orange/5 text-accent-orange';
+          alertsDiv.innerHTML += `
+            <div class="p-4 rounded-r border-y border-r border-border-gray ${typeClass}">
+              <div class="flex justify-between items-start">
+                <h5 class="font-bold text-sm text-text-dark">${a.titulo}</h5>
+                <span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-white border text-text-dark">${a.tipo}</span>
+              </div>
+              <p class="text-xs text-text-gray mt-1 leading-relaxed">${a.descricao}</p>
+            </div>
+          `;
+        });
+      } else {
+        alertsDiv.innerHTML = `<p class="text-xs text-text-gray">Nenhum gravame ou alerta de risco reportado.</p>`;
+      }
+
+      // Tab: Parecer
+      document.getElementById('info-parecer').innerText = item.parecerConsolidado || "Aguardando geração do parecer do analista Cresol.";
+
+      switchView('analise');
+      switchAnalysisTab('proprietarios');
+    }
+
+    // Switch inside tabs of detailed analysis
+    function switchAnalysisTab(tabId) {
+      activeAnalysisTab = tabId;
+      const tabs = ['proprietarios', 'imovel', 'alertas', 'parecer'];
+      tabs.forEach(id => {
+        const btn = document.getElementById('tab-btn-' + id);
+        const content = document.getElementById('tab-content-' + id);
+        if (id === tabId) {
+          btn.className = "px-6 py-4 text-xs font-bold border-b-2 border-accent-orange text-primary-green";
+          content.classList.remove('hidden');
+        } else {
+          btn.className = "px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark";
+          content.classList.add('hidden');
+        }
+      });
+    }
+
+    // Call Google Apps Script backend to analyze text
+    function submitAnalysis() {
+      const text = document.getElementById('document-textarea').value.trim();
+      const model = document.getElementById('param-model').value;
+      const fileName = document.getElementById('gas-file-name').innerText || "Matricula_Importada.pdf";
+
+      if (!text && !selectedFileBase64) {
+        showToast("error", "Anexe um arquivo (PDF ou foto da matrícula), cole o teor do documento ou escolha uma de nossas amostras acima.");
+        return;
+      }
+
+      showLoading(selectedFileBase64
+        ? "O analista de IA da Cresol está fazendo o OCR e interpretando o documento..."
+        : "O cérebro artificial da Cresol está lendo sua certidão...");
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            analyses.unshift(result);
+            updateKPIs();
+            renderTable();
+            hideLoading();
+            resetImportForm();
+            openAnalysis(result);
+            showToast("success", "Matrícula #" + result.id + " processada perfeitamente via IA!");
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao processar matrícula: " + err);
+          })
+          .processarMatriculaIA(selectedFileBase64, fileName, text, model);
+      } else {
+        // Simulação client-side se estiver fora do ambiente GAS
+        setTimeout(() => {
+          const mockId = "CRT-" + Math.floor(1000 + Math.random() * 9000);
+          const mockObj = {
+            id: mockId,
+            timestamp: new Date().toISOString(),
+            nomeArquivo: fileName,
+            metodo: model,
+            imovel: {
+              matricula: "41.902",
+              comarca: "Londrina - PR",
+              valor: "R$ 3.800.000,00",
+              risco: "3.4/10",
+              rating: "A-",
+              endereco: "Avenida Higienópolis, 1200, Centro, Londrina - PR",
+              area: "840 m²",
+              descricaoCurta: "Sala comercial ampla ocupada por consultórios, edificada em condomínio comercial."
+            },
+            proprietarios: [
+              { nome: "Clínica Médica LonMed Ltda", documento: "12.345.678/0001-90", participacao: "100%", status: "REGULAR" }
+            ],
+            alertas: [
+              { titulo: "Averbação Premonitória Registrada", descricao: "Constatação de ação de cobrança movida contra a proprietária no valor de R$ 45.000,00.", tipo: "ATENÇÃO" }
+            ],
+            cadeiaDominial: [],
+            parecerConsolidado: "O imóvel comercial possui ótima situação. Processado via simulação client-side local.",
+            status: "EM REVISÃO"
+          };
+          analyses.unshift(mockObj);
+          updateKPIs();
+          renderTable();
+          hideLoading();
+          openAnalysis(mockObj);
+          showToast("success", "Matrícula processada via simulação de teste!");
+        }, 1500);
+      }
+    }
+
+    // Trigger sheets export from client
+    function triggerSheetsExport(id) {
+      const targetId = id || (selectedAnalysis ? selectedAnalysis.id : null);
+      if (!targetId) {
+        showToast("error", "Nenhuma análise selecionada para exportação.");
+        return;
+      }
+
+      showLoading("Exportando linhas e gravando abas na Planilha...");
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            showToast("success", response.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao exportar Planilha: " + err);
+          })
+          .exportarParaSheets(targetId);
+      } else {
+        setTimeout(() => {
+          hideLoading();
+          showToast("success", "Simulação: Dados sincronizados com a planilha de teste na aba DB_IMPORTACOES!");
+        }, 1000);
+      }
+    }
+
+    // Save sheets configuration
+    function saveSheetsConfig(e) {
+      e.preventDefault();
+      const url = document.getElementById('config-spreadsheet-url').value.trim();
+      const abaP = document.getElementById('config-aba-principal').value.trim();
+      const abaA = document.getElementById('config-aba-alertas').value.trim();
+
+      const newConfig = {
+        spreadsheetUrl: url,
+        abaPrincipal: abaP,
+        abaAlertas: abaA
+      };
+
+      showLoading("Salvando configurações na base corporativa...");
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(response) {
+            config.spreadsheetUrl = response.config.spreadsheetUrl;
+            config.abaPrincipal = response.config.abaPrincipal;
+            config.abaAlertas = response.config.abaAlertas;
+            applyConfigToUI();
+            updateKPIs();
+            hideLoading();
+            showToast("success", response.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao salvar config: " + err);
+          })
+          .salvarSystemConfig(newConfig);
+      } else {
+        setTimeout(() => {
+          config.spreadsheetUrl = url;
+          config.abaPrincipal = abaP;
+          config.abaAlertas = abaA;
+          applyConfigToUI();
+          updateKPIs();
+          hideLoading();
+          showToast("success", "Configurações de teste salvas localmente!");
+        }, 1000);
+      }
+    }
+
+    // Save Gemini API Key
+    function saveApiKey() {
+      const key = document.getElementById('config-gemini-key').value.trim();
+      showLoading("Gravando chave API do Gemini nas propriedades...");
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(response) {
+            config.geminiKeyConfigured = key ? true : false;
+            applyConfigToUI();
+            hideLoading();
+            document.getElementById('config-gemini-key').value = '';
+            showToast("success", response.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao gravar chave API: " + err);
+          })
+          .salvarGeminiApiKey(key);
+      } else {
+        setTimeout(() => {
+          config.geminiKeyConfigured = key ? true : false;
+          applyConfigToUI();
+          hideLoading();
+          document.getElementById('config-gemini-key').value = '';
+          showToast("success", "Simulação: Chave de teste alterada!");
+        }, 1000);
+      }
+    }
+
+    // Trigger row deletion
+    function triggerDelete(id) {
+      if (!confirm("Deseja realmente remover esta análise do lote #" + id + " de forma irreversível?")) return;
+
+      showLoading("Removendo registro...");
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            analyses = analyses.filter(a => a.id !== id);
+            if (selectedAnalysis && selectedAnalysis.id === id) {
+              selectedAnalysis = null;
+              document.getElementById('nav-analise').classList.add('hidden');
+            }
+            updateKPIs();
+            renderTable();
+            hideLoading();
+            showToast("success", res.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao deletar: " + err);
+          })
+          .deletarAnalise(id);
+      } else {
+        setTimeout(() => {
+          analyses = analyses.filter(a => a.id !== id);
+          updateKPIs();
+          renderTable();
+          hideLoading();
+          showToast("success", "Simulação: Lote removido!");
+        }, 800);
+      }
+    }
+
+    // Copia a descrição legal (minuta) para a área de transferência
+    function copyDescricaoLegal() {
+      const texto = document.getElementById('info-descricao-legal').innerText || '';
+      if (!texto) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto)
+          .then(() => showToast("success", "Descrição legal copiada para a área de transferência!"))
+          .catch(() => showToast("error", "Não foi possível copiar automaticamente."));
+      } else {
+        showToast("error", "Cópia automática indisponível neste navegador.");
+      }
+    }
+
+    // Toast and spinner util functions
+    function showToast(type, text) {
+      const toast = document.getElementById('notification-toast');
+      const iconDiv = document.getElementById('toast-icon');
+      const textDiv = document.getElementById('toast-text');
+
+      textDiv.innerText = text;
+      toast.classList.remove('hidden');
+
+      if (type === 'success') {
+        toast.className = "fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-4 rounded-lg shadow-xl border bg-white border-left-green border-border-gray text-primary-green";
+        iconDiv.innerHTML = `<i data-lucide="check-circle" class="w-6 h-6 text-primary-green"></i>`;
+      } else {
+        toast.className = "fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-4 rounded-lg shadow-xl border bg-white border-left-red border-border-gray text-danger-red";
+        iconDiv.innerHTML = `<i data-lucide="shield-alert" class="w-6 h-6 text-danger-red"></i>`;
+      }
+      lucide.createIcons();
+
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 5000);
+    }
+
+    function showLoading(msg) {
+      document.getElementById('loading-message').innerText = msg;
+      document.getElementById('loading-screen').classList.remove('hidden');
+    }
+
+    function hideLoading() {
+      document.getElementById('loading-screen').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>

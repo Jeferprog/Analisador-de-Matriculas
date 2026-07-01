@@ -1,43 +1,878 @@
+/**
+ * Cresol Real Estate Intelligence
+ * Arquivo: Code.gs (codigo.gs)
+ * Sistema de Inteligência e OCR de Matrículas Imobiliárias via IA
+ */
+
+// Chaves de propriedades do script para persistência segura
+const PROP_API_KEY = 'GEMINI_API_KEY';
+const PROP_CONFIG = 'CRESOL_CONFIG_JSON';
+
+/**
+ * Renderiza a interface do usuário (Single Page Application)
+ */
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('index')
+  return HtmlService.createTemplateFromFile('index')
+      .evaluate()
       .setTitle('Cresol Real Estate Intelligence')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 /**
- * Simula o processamento de uma matrícula.
- * No futuro, aqui será feita a chamada para a API de IA.
+ * Função auxiliar para incluir arquivos HTML adicionais, se necessário
  */
-function processarMatricula(fileData) {
-  // Simulação de delay de processamento
-  Utilities.sleep(2000);
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * Obtém a chave de API do Gemini salva nas propriedades do projeto
+ */
+function getGeminiApiKey() {
+  return PropertiesService.getScriptProperties().getProperty(PROP_API_KEY) || '';
+}
+
+/**
+ * Salva a chave de API do Gemini nas propriedades do projeto de forma segura
+ */
+function salvarGeminiApiKey(key) {
+  if (key) {
+    PropertiesService.getScriptProperties().setProperty(PROP_API_KEY, key.trim());
+    return { success: true, message: "Chave API do Gemini atualizada com sucesso no ambiente corporativo Cresol!" };
+  } else {
+    PropertiesService.getScriptProperties().deleteProperty(PROP_API_KEY);
+    return { success: true, message: "Chave API removida. O sistema passará a operar em modo de simulação integrada." };
+  }
+}
+
+/**
+ * Obtém as configurações do sistema para integração com Planilhas Google
+ */
+function getSystemConfig() {
+  const defaultConf = {
+    spreadsheetUrl: '',
+    abaPrincipal: 'DB_IMPORTACOES',
+    abaAlertas: 'RISCO_LOG',
+    geminiKeyConfigured: getGeminiApiKey() ? true : false
+  };
   
-  return {
-    status: 'success',
-    data: {
-      proprietarios: [
-        { nome: 'Carlos Alberto Santos', documento: '123.456.789-00', participacao: '60%', status: 'REGULAR' },
-        { nome: 'Investimentos Imobiliários LTDA', documento: '00.123.456/0001-99', participacao: '40%', status: 'REGULAR' }
-      ],
-      imovel: {
-        valor: 'R$ 4.2M',
-        risco: '9.4/10',
-        rating: 'AAA+'
+  const raw = PropertiesService.getScriptProperties().getProperty(PROP_CONFIG);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      parsed.geminiKeyConfigured = getGeminiApiKey() ? true : false;
+      return parsed;
+    } catch (e) {
+      return defaultConf;
+    }
+  }
+  return defaultConf;
+}
+
+/**
+ * Salva as configurações de integração do Google Sheets
+ */
+function salvarSystemConfig(config) {
+  const systemConfig = {
+    spreadsheetUrl: config.spreadsheetUrl || '',
+    abaPrincipal: config.abaPrincipal || 'DB_IMPORTACOES',
+    abaAlertas: config.abaAlertas || 'RISCO_LOG'
+  };
+  
+  PropertiesService.getScriptProperties().setProperty(PROP_CONFIG, JSON.stringify(systemConfig));
+  
+  // Inicializa a planilha se houver uma URL configurada
+  if (systemConfig.spreadsheetUrl) {
+    try {
+      inicializarPlanilha(systemConfig.spreadsheetUrl, systemConfig.abaPrincipal, systemConfig.abaAlertas);
+    } catch (e) {
+      return { 
+        success: true, 
+        message: "Configuração salva, mas falhou ao inicializar cabeçalhos da planilha: " + e.toString(), 
+        config: systemConfig 
+      };
+    }
+  }
+  
+  return { success: true, message: "Configurações de mapeamento salvas com sucesso!", config: systemConfig };
+}
+
+/**
+ * Inicializa os cabeçalhos das planilhas de destino caso não existam
+ */
+function inicializarPlanilha(url, abaPrincipalName, abaAlertasName) {
+  const ss = SpreadsheetApp.openByUrl(url);
+  
+  // 1. Inicializa Aba Principal
+  let sheetPrincipal = ss.getSheetByName(abaPrincipalName);
+  if (!sheetPrincipal) {
+    sheetPrincipal = ss.insertSheet(abaPrincipalName);
+  }
+  if (sheetPrincipal.getLastRow() === 0) {
+    sheetPrincipal.appendRow([
+      'Lote ID', 'Data e Hora', 'Arquivo', 'Comarca', 'Nº Matrícula',
+      'Área', 'Endereço', 'Valor Estimado', 'Risco Geral', 'Rating',
+      'Proprietários', 'Status de Liberação', 'Parecer Consolidado', 'Dados Completos (JSON)'
+    ]);
+    // Formatação do Cabeçalho (Verde Cresol institucional)
+    const headerRange = sheetPrincipal.getRange(1, 1, 1, 14);
+    headerRange.setBackground('#005c46')
+               .setFontColor('#ffffff')
+               .setFontWeight('bold')
+               .setHorizontalAlignment('center');
+    sheetPrincipal.setFrozenRows(1);
+  }
+  
+  // 2. Inicializa Aba de Alertas
+  let sheetAlertas = ss.getSheetByName(abaAlertasName);
+  if (!sheetAlertas) {
+    sheetAlertas = ss.insertSheet(abaAlertasName);
+  }
+  if (sheetAlertas.getLastRow() === 0) {
+    sheetAlertas.appendRow([
+      'Lote ID', 'Data e Hora', 'Nº Matrícula', 'Comarca', 'Título do Alerta', 'Descrição do Risco', 'Gravidade'
+    ]);
+    const headerRange = sheetAlertas.getRange(1, 1, 1, 7);
+    headerRange.setBackground('#f58220') // Laranja Cresol
+               .setFontColor('#ffffff')
+               .setFontWeight('bold')
+               .setHorizontalAlignment('center');
+    sheetAlertas.setFrozenRows(1);
+  }
+}
+
+/**
+ * Persiste o histórico local com segurança.
+ * O Apps Script limita cada propriedade a ~9KB, então mantemos apenas as análises mais
+ * recentes e reduzimos progressivamente caso o limite ainda seja excedido.
+ * A planilha do Google (quando configurada) permanece como o repositório durável e completo.
+ */
+function salvarBancoLocal(list) {
+  const props = PropertiesService.getScriptProperties();
+  let trimmed = list.slice(0, 15);
+  try {
+    props.setProperty('CRESOL_DB_ANALYSES', JSON.stringify(trimmed));
+    return;
+  } catch (e) {
+    // Excedeu o limite de tamanho: reduz o número de registros até caber.
+    while (trimmed.length > 1) {
+      trimmed = trimmed.slice(0, trimmed.length - 1);
+      try {
+        props.setProperty('CRESOL_DB_ANALYSES', JSON.stringify(trimmed));
+        return;
+      } catch (e2) {
+        // continua reduzindo
       }
     }
-  };
+  }
 }
 
 /**
- * Exporta dados para uma planilha específica.
+ * Carrega a lista histórica de análises.
+ * Caso haja Planilha conectada, lê as análises dela. Caso contrário, retorna um histórico mockado robusto.
  */
-function exportarParaSheets(data, spreadsheetId) {
-  try {
-    const ss = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = ss.getSheets()[0];
-    sheet.appendRow([new Date(), JSON.stringify(data)]);
-    return "Dados exportados com sucesso!";
-  } catch (e) {
-    return "Erro ao exportar: " + e.toString();
+function listarAnalises() {
+  const config = getSystemConfig();
+  
+  if (config.spreadsheetUrl) {
+    try {
+      const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+      const sheet = ss.getSheetByName(config.abaPrincipal);
+      if (sheet) {
+        const rows = sheet.getDataRange().getValues();
+        if (rows.length > 1) {
+          const list = [];
+          for (let i = rows.length - 1; i >= 1; i--) {
+            const row = rows[i];
+
+            // Preferência: reidrata o objeto completo salvo na coluna "Dados Completos (JSON)"
+            if (row[13]) {
+              try {
+                const full = JSON.parse(row[13]);
+                if (full && full.id) {
+                  list.push(full);
+                  continue;
+                }
+              } catch (e) {
+                // JSON inválido: cai na reconstrução parcial abaixo
+              }
+            }
+
+            // Fallback (linhas antigas sem a coluna de JSON completo)
+            let props = [];
+            try {
+              props = JSON.parse(row[10]);
+            } catch (e) {
+              props = [{ nome: row[10], documento: '', participacao: '100%', status: 'REGULAR' }];
+            }
+
+            list.push({
+              id: row[0],
+              timestamp: row[1],
+              nomeArquivo: row[2],
+              status: row[11],
+              metodo: 'Importado da Planilha',
+              imovel: {
+                matricula: row[4],
+                comarca: row[3],
+                valor: row[7],
+                risco: row[8],
+                rating: row[9],
+                endereco: row[6],
+                area: row[5],
+                descricaoCurta: 'Recuperado do histórico oficial de planilhas.'
+              },
+              proprietarios: props,
+              gravames: [],
+              alertas: [], // Detalhes de alertas podem ser lidos da segunda aba se necessário
+              cadeiaDominial: [],
+              parecerConsolidado: row[12]
+            });
+          }
+          return list;
+        }
+      }
+    } catch (e) {
+      // Ignora erro e cai no fallback padrão do banco local simulado
+    }
   }
+  
+  // Fallback: Armazenamento em ScriptProperties ou Mock padrão
+  const localDb = PropertiesService.getScriptProperties().getProperty('CRESOL_DB_ANALYSES');
+  if (localDb) {
+    try {
+      return JSON.parse(localDb);
+    } catch (e) {
+      // Erro de parse, retorna padrões
+    }
+  }
+  
+  const padroes = obterAnalisesPadrao();
+  salvarBancoLocal(padroes);
+  return padroes;
+}
+
+/**
+ * Exclui uma análise do histórico local
+ */
+function deletarAnalise(id) {
+  const list = listarAnalises();
+  const updated = list.filter(function(item) {
+    return item.id !== id;
+  });
+  salvarBancoLocal(updated);
+  
+  // Também tenta remover da planilha se estiver configurado
+  const config = getSystemConfig();
+  if (config.spreadsheetUrl) {
+    try {
+      const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+      const sheet = ss.getSheetByName(config.abaPrincipal);
+      if (sheet) {
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          if (rows[i][0] === id) {
+            sheet.deleteRow(i + 1);
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      // Erro silencioso na planilha
+    }
+  }
+  
+  return { success: true, message: "Registro excluído com sucesso!" };
+}
+
+/**
+ * Exporta dados de uma análise específica para a Planilha do Google configurada
+ */
+function exportarParaSheets(analysisId) {
+  const config = getSystemConfig();
+  if (!config.spreadsheetUrl) {
+    throw new Error("URL da planilha de destino não configurada nas configurações de mapeamento Cresol.");
+  }
+  
+  // Busca a análise nos registros
+  const list = listarAnalises();
+  let target = null;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].id === analysisId) {
+      target = list[i];
+      break;
+    }
+  }
+  
+  if (!target) {
+    throw new Error("Análise não encontrada nos registros.");
+  }
+  
+  try {
+    const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+    
+    // Assegura cabeçalhos
+    inicializarPlanilha(config.spreadsheetUrl, config.abaPrincipal, config.abaAlertas);
+    
+    const sheetPrincipal = ss.getSheetByName(config.abaPrincipal);
+    const sheetAlertas = ss.getSheetByName(config.abaAlertas);
+    
+    // Verifica se já existe para evitar duplicados
+    const rows = sheetPrincipal.getDataRange().getValues();
+    let rowIndexToUpdate = -1;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][0] === analysisId) {
+        rowIndexToUpdate = i + 1;
+        break;
+      }
+    }
+    
+    const rowData = [
+      target.id,
+      target.timestamp,
+      target.nomeArquivo,
+      target.imovel.comarca,
+      target.imovel.matricula,
+      target.imovel.area,
+      target.imovel.endereco,
+      target.imovel.valor,
+      target.imovel.risco,
+      target.imovel.rating,
+      JSON.stringify(target.proprietarios),
+      target.status,
+      target.parecerConsolidado,
+      JSON.stringify(target) // Dados completos para round-trip sem perda (confrontações, gravames, descrição legal, etc.)
+    ];
+
+    if (rowIndexToUpdate > -1) {
+      // Atualiza linha existente
+      sheetPrincipal.getRange(rowIndexToUpdate, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      // Adiciona nova linha
+      sheetPrincipal.appendRow(rowData);
+    }
+    
+    // Exporta Alertas detalhados na aba de Alertas de Risco
+    if (sheetAlertas && target.alertas && target.alertas.length > 0) {
+      // Limpa alertas anteriores deste Lote para atualizar
+      const alertaRows = sheetAlertas.getDataRange().getValues();
+      for (let j = alertaRows.length - 1; j >= 1; j--) {
+        if (alertaRows[j][0] === analysisId) {
+          sheetAlertas.deleteRow(j + 1);
+        }
+      }
+      
+      // Insere novos alertas
+      for (let k = 0; k < target.alertas.length; k++) {
+        const alerta = target.alertas[k];
+        sheetAlertas.appendRow([
+          target.id,
+          target.timestamp,
+          target.imovel.matricula,
+          target.imovel.comarca,
+          alerta.titulo,
+          alerta.descricao,
+          alerta.tipo
+        ]);
+      }
+    }
+    
+    return {
+      success: true,
+      message: "Dados sincronizados com sucesso na Planilha Google da Cresol!"
+    };
+    
+  } catch (e) {
+    throw new Error("Erro de conexão com o Google Sheets: " + e.toString());
+  }
+}
+
+/**
+ * Envia o documento para análise via API do Gemini
+ */
+function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
+  const selectedMetodo = metodo || "Especialista Imobiliário v4";
+  const name = fileName || "Documento.txt";
+  const uniqueId = "CRT-" + Math.floor(1000 + Math.random() * 9000);
+  
+  const apiKey = getGeminiApiKey();
+  
+  // Caso de Fallback Inteligente (Se chave de API não configurada no Apps Script)
+  if (!apiKey || apiKey.trim() === '') {
+    Utilities.sleep(1500); // Simula o tempo de análise
+    
+    const containsRural = (textInput && textInput.toLowerCase().indexOf("rural") > -1) || (name && name.toLowerCase().indexOf("rural") > -1) || (textInput && textInput.toLowerCase().indexOf("fazenda") > -1);
+    const containsUrbano = (textInput && textInput.toLowerCase().indexOf("apartamento") > -1) || (textInput && textInput.toLowerCase().indexOf("urbano") > -1) || (textInput && textInput.toLowerCase().indexOf("centro") > -1);
+    const containsPenhora = textInput && (textInput.toLowerCase().indexOf("penhora") > -1 || textInput.toLowerCase().indexOf("processo") > -1 || textInput.toLowerCase().indexOf("trabalhista") > -1);
+    
+    let simResult;
+    
+    if (containsRural) {
+      simResult = {
+        imovel: {
+          matricula: "14.880",
+          comarca: "Sorriso - MT",
+          valor: "R$ 15.400.000,00",
+          risco: "2.1/10",
+          rating: "AA",
+          endereco: "Rodovia BR-163, KM 720, Área Rural, Sorriso - MT",
+          area: "420 hectares (Gleba Cedro)",
+          descricaoCurta: "Imóvel rural plano, com 82% de área mecanizável para grãos. Regularizado junto ao INCRA, CCIR e Georreferenciamento homologado."
+        },
+        proprietarios: [
+          {
+            nome: "Egon Schultz",
+            documento: "444.555.666-12",
+            participacao: "100%",
+            status: "REGULAR"
+          }
+        ],
+        alertas: [
+          {
+            titulo: "CAR Ativo e Regularizado",
+            descricao: "Cadastro Ambiental Rural validado pela Secretaria de Meio Ambiente do Estado, com reserva legal preservada de 20%.",
+            tipo: "INFORMAÇÃO"
+          },
+          {
+            titulo: "Arrendamento Agrícola Parcial",
+            descricao: "Contrato de arrendamento de 150 hectares registrado para cultivo de algodão com vigência até Junho de 2027.",
+            tipo: "ATENÇÃO"
+          }
+        ],
+        cadeiaDominial: [
+          {
+            data: "14/03/2012",
+            tipoTransacao: "Escritura de Compra e Venda",
+            adquirente: "Egon Schultz",
+            transmitente: "Espólio de Walter Schultz",
+            registro: "R-4/14.880",
+            detalhes: "Partilha amigável pós inventário do titular original."
+          }
+        ],
+        parecerConsolidado: "A fazenda apresenta ótima capacidade produtiva e logística. Toda a cadeia possessória nos últimos 10 anos está consolidada sem litígios. O imóvel é plenamente elegível para garantia real Cresol por alienação fiduciária em garantia rural. Recomenda-se apenas a averbação do termo de ciência do contrato de arrendamento agrícola na formalização da operação.",
+        status: "LIBERADO"
+      };
+    } else if (containsPenhora || containsUrbano) {
+      simResult = {
+        imovel: {
+          matricula: "22.315",
+          comarca: "Porto Alegre - RS",
+          valor: "R$ 1.150.000,00",
+          risco: "8.2/10",
+          rating: "C",
+          endereco: "Rua Gonçalo de Carvalho, 320, Apto 402, Moinhos de Vento, Porto Alegre - RS",
+          area: "145 m²",
+          descricaoCurta: "Apartamento residencial de luxo com 3 dormitórios, duas vagas de garagem privativas, localizado em região nobre com alto potencial de liquidez."
+        },
+        proprietarios: [
+          {
+            nome: "Julio Cesar Brandão",
+            documento: "777.888.999-11",
+            participacao: "50%",
+            status: "ATENÇÃO"
+          },
+          {
+            nome: "Marta Helena Brandão",
+            documento: "888.999.000-22",
+            participacao: "50%",
+            status: "REGULAR"
+          }
+        ],
+        alertas: [
+          {
+            titulo: "Penhora Judicial Registrada (AV-9)",
+            descricao: "Penhora decorrente de Execução de Título Extrajudicial promovida pelo Condomínio do Edifício Residencial na comarca de Porto Alegre no valor de R$ 94.000,00.",
+            tipo: "CRÍTICO"
+          },
+          {
+            titulo: "Execução Fiscal da União",
+            descricao: "Averbação AV-11 de distribuição de execução fiscal federal contra o co-proprietário Julio Cesar Brandão no valor consolidado de R$ 420.000,00.",
+            tipo: "CRÍTICO"
+          }
+        ],
+        cadeiaDominial: [
+          {
+            data: "18/02/2015",
+            tipoTransacao: "Adjudicação por Herança",
+            adquirente: "Julio Cesar Brandão e Marta Helena Brandão",
+            transmitente: "Sucessores de Orlando Brandão",
+            registro: "R-7/22.315",
+            detalhes: "Partilha homologada judicialmente pela 3ª Vara de Família."
+          }
+        ],
+        parecerConsolidado: "Garantia jurídica de alto risco. O imóvel possui excelente liquidez de mercado, contudo, as averbações de penhora e distribuição de execução fiscal representam grave ameaça à garantia fiduciária ou hipotecária da cooperativa Cresol. Uma eventual adjudicação forçada por terceiros credores prejudicaria nossa preferência. Operação REJEITADA como garantia até que se prove a baixa judicial das referidas averbações na matrícula.",
+        status: "REJEITADO"
+      };
+    } else {
+      simResult = {
+        imovel: {
+          matricula: "41.902",
+          comarca: "Londrina - PR",
+          valor: "R$ 3.800.000,00",
+          risco: "3.4/10",
+          rating: "A-",
+          endereco: "Avenida Higienópolis, 1200, Centro, Londrina - PR",
+          area: "840 m²",
+          descricaoCurta: "Sala comercial ampla ocupada por consultórios, edificada em condomínio de salas comerciais."
+        },
+        proprietarios: [
+          {
+            nome: "Clínica Médica LonMed Ltda",
+            documento: "12.345.678/0001-90",
+            participacao: "100%",
+            status: "REGULAR"
+          }
+        ],
+        alertas: [
+          {
+            titulo: "Averbação Premonitória Registrada",
+            descricao: "Constatação de ação de cobrança movida por fornecedor local contra a proprietária, pendente de julgamento no valor de R$ 45.000,00.",
+            tipo: "ATENÇÃO"
+          }
+        ],
+        cadeiaDominial: [
+          {
+            data: "15/07/2018",
+            tipoTransacao: "Compra e Venda",
+            adquirente: "Clínica Médica LonMed Ltda",
+            transmitente: "Imobiliária Londrina S.A.",
+            registro: "R-3/41.902",
+            detalhes: "Imóvel livre de ônus adquirido à vista."
+          }
+        ],
+        parecerConsolidado: "O imóvel comercial ostenta boa situação cadastral e alta liquidez regional. A averbação premonitória possui valor diminuto frente ao valor de avaliação do bem (menos de 2%), não inviabilizando de forma categórica a aceitação da garantia pela Cresol. Recomenda-se aprovação condicionada à retenção de margem de segurança na operação ou substituição fidejussória dos sócios.",
+        status: "EM REVISÃO"
+      };
+    }
+    
+    const finalResult = {
+      id: uniqueId,
+      timestamp: new Date().toISOString(),
+      nomeArquivo: name,
+      metodo: selectedMetodo,
+      imovel: simResult.imovel,
+      proprietarios: simResult.proprietarios,
+      alertas: simResult.alertas,
+      cadeiaDominial: simResult.cadeiaDominial,
+      parecerConsolidado: simResult.parecerConsolidado,
+      status: simResult.status
+    };
+    
+    // Salva no banco persistente do script
+    const currentList = listarAnalises();
+    currentList.unshift(finalResult);
+    salvarBancoLocal(currentList);
+    
+    // Auto-exporta se houver planilha ativa
+    const sysConfSim = getSystemConfig();
+    if (sysConfSim.spreadsheetUrl) {
+      try {
+        exportarParaSheets(uniqueId);
+      } catch (e) {
+        // Ignora
+      }
+    }
+    
+    return finalResult;
+  }
+  
+  // Caso de Chave API ativa: Chamada Real ao Gemini API via UrlFetchApp
+  try {
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+
+    let systemInstructionText =
+      "Você é o Analista Sênior de Registros Públicos e Direito Imobiliário da cooperativa Cresol. Sua missão de alta responsabilidade é examinar detalhadamente matrículas de imóveis, interpretando a linguagem técnica registral e notarial, rastreando a cadeia dominial (proprietários anteriores e atuais) com suas participações, e identificando rigorosamente restrições de crédito e gravames (penhoras, alienações fiduciárias ativas ou baixadas, indisponibilidades de bens, hipotecas, servidões, usufrutos, arresto, arrolamento). Ao final, classifique o risco fiduciário do bem como garantia (de AAA+ a D) e consolide um parecer técnico de elegibilidade jurídica para crédito.\n\n" +
+      "METODOLOGIA DE VALIDAÇÃO CRUZADA (aplique internamente antes de responder):\n" +
+      "1. Extração registral: transcreva Matrícula, Ofício/Cartório e Comarca, tipo do imóvel (urbano/rural/gleba), endereço/localização, área total e área construída, Cadastro INCRA/CCIR quando rural, e a data/hora de emissão da certidão.\n" +
+      "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta.\n" +
+      "3. Qualificação subjetiva: identifique todos os proprietários/fiduciantes com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
+      "4. Ônus e gravames: liste cada gravame ativo com o registro (R-/AV-), o tipo, o credor/beneficiário e observação/vencimento. Se estiver livre e desembaraçado, declare isso explicitamente.\n" +
+      "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n\n" +
+      "LEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF nativo, PDF digitalizado ou FOTOGRAFIA da matrícula (torta, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral, lendo todos os R- e AV- na ordem. NUNCA invente dados: se um campo estiver ilegível ou ausente, use 'Não identificado' e registre a ilegibilidade como alerta do tipo ATENÇÃO. Baseie-se estritamente no documento fornecido.";
+
+    let prompt = "Faça a análise técnica jurídica profunda desta matrícula imobiliária (PDF, imagem ou transcrição) aplicando a metodologia de validação cruzada. Retorne ESTRITAMENTE um objeto JSON válido no formato abaixo, sem texto fora do JSON.\n\n" +
+                 "FORMATO JSON SOLICITADO:\n" +
+                 "{\n" +
+                 "  \"imovel\": {\n" +
+                 "    \"matricula\": \"string\",\n" +
+                 "    \"cartorio\": \"string (Ofício/Registro de Imóveis)\",\n" +
+                 "    \"comarca\": \"string (Comarca - UF)\",\n" +
+                 "    \"tipo\": \"string (Ex: Gleba Rural, Apartamento, Galpão)\",\n" +
+                 "    \"dataEmissaoCertidao\": \"string (data e hora de emissão da certidão, se constar)\",\n" +
+                 "    \"cadastroIncra\": \"string (INCRA/CCIR se rural, senão vazio)\",\n" +
+                 "    \"valor\": \"string (Valor estimado de mercado)\",\n" +
+                 "    \"risco\": \"string (Ex: 3.5/10)\",\n" +
+                 "    \"rating\": \"string (AAA+ a D)\",\n" +
+                 "    \"endereco\": \"string\",\n" +
+                 "    \"area\": \"string (área total do terreno)\",\n" +
+                 "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
+                 "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
+                 "    \"descricaoLegal\": \"string (descritivo legal completo e atualizado, pronto para contrato)\",\n" +
+                 "    \"confrontacoes\": [\n" +
+                 "      { \"posicao\": \"Norte|Sul|Leste|Oeste\", \"confrontante\": \"string\", \"medida\": \"string\" }\n" +
+                 "    ]\n" +
+                 "  },\n" +
+                 "  \"proprietarios\": [\n" +
+                 "    { \"nome\": \"string\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"estadoCivil\": \"string\", \"status\": \"REGULAR|HISTÓRICO|ATENÇÃO\" }\n" +
+                 "  ],\n" +
+                 "  \"gravames\": [\n" +
+                 "    { \"registro\": \"string (R-/AV-)\", \"tipo\": \"string\", \"credor\": \"string\", \"observacao\": \"string (vencimento/obs)\" }\n" +
+                 "  ],\n" +
+                 "  \"alertas\": [\n" +
+                 "    { \"titulo\": \"string\", \"descricao\": \"string\", \"tipo\": \"CRÍTICO|ATENÇÃO|INFORMAÇÃO\" }\n" +
+                 "  ],\n" +
+                 "  \"cadeiaDominial\": [\n" +
+                 "    { \"data\": \"string\", \"tipoTransacao\": \"string\", \"adquirente\": \"string\", \"transmitente\": \"string\", \"registro\": \"string\", \"detalhes\": \"string\" }\n" +
+                 "  ],\n" +
+                 "  \"parecerConsolidado\": \"string (Laudo final de elegibilidade jurídica, incluindo a auditoria de área e as ressalvas de qualificação subjetiva, recomendando ou não a aceitação de garantia creditícia)\",\n" +
+                 "  \"status\": \"LIBERADO|EM REVISÃO|REJEITADO\"\n" +
+                 "}\n\n" +
+                 "Regras: gravames traz apenas ônus reais registrados; se não houver, retorne lista vazia e declare 'livre de ônus' no parecer. alertas traz avisos de risco/compliance (ex.: CPF faltante, divergência de área, ilegibilidade). Use 'Não identificado' para campos ausentes.\n\n" +
+                 "NOME DO ARQUIVO: " + name + "\n" +
+                 "CONTEÚDO DA MATRÍCULA:\n" + textInput;
+                  
+    let parts = [];
+    
+    // Se houver arquivo em Base64, insere como inlineData multimodal para o Gemini analisar a imagem/PDF!
+    if (fileBase64 && fileBase64.trim() !== "") {
+      let cleanedBase64 = fileBase64;
+      let mimeType = "application/pdf"; // default
+      if (fileBase64.indexOf("base64,") > -1) {
+        let partsBase64 = fileBase64.split("base64,");
+        cleanedBase64 = partsBase64[1];
+        let header = partsBase64[0];
+        if (header.indexOf("image/png") > -1) {
+          mimeType = "image/png";
+        } else if (header.indexOf("image/jpeg") > -1 || header.indexOf("image/jpg") > -1) {
+          mimeType = "image/jpeg";
+        } else if (header.indexOf("application/pdf") > -1) {
+          mimeType = "application/pdf";
+        }
+      } else {
+        // Deduz pelo nome do arquivo
+        let lowerName = name.toLowerCase();
+        if (lowerName.endsWith(".png")) {
+          mimeType = "image/png";
+        } else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+          mimeType = "image/jpeg";
+        }
+      }
+      
+      parts.push({
+        "inlineData": {
+          "mimeType": mimeType,
+          "data": cleanedBase64
+        }
+      });
+    }
+    
+    // Adiciona o prompt textual
+    parts.push({ "text": prompt });
+    
+    // Prepara payload com systemInstruction oficial do Gemini v1beta
+    const payload = {
+      "contents": [{
+        "role": "user",
+        "parts": parts
+      }],
+      "systemInstruction": {
+        "parts": [{ "text": systemInstructionText }]
+      },
+      "generationConfig": {
+        "responseMimeType": "application/json"
+      }
+    };
+    
+    const options = {
+      "method": "post",
+      "contentType": "application/json",
+      "payload": JSON.stringify(payload),
+      "muteHttpExceptions": true
+    };
+    
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
+    const bodyText = response.getContentText();
+    
+    if (code !== 200) {
+      throw new Error("Erro da API Gemini (Status " + code + "): " + bodyText);
+    }
+    
+    const parsedRaw = JSON.parse(bodyText);
+
+    // Valida se a IA de fato retornou uma análise (evita quebra por bloqueio de segurança ou resposta vazia)
+    if (!parsedRaw.candidates || parsedRaw.candidates.length === 0) {
+      const blockReason = parsedRaw.promptFeedback && parsedRaw.promptFeedback.blockReason;
+      throw new Error("A IA não retornou análise" + (blockReason ? " (bloqueio: " + blockReason + ")" : "") + ". Verifique a legibilidade e o conteúdo do documento enviado.");
+    }
+
+    const candidate = parsedRaw.candidates[0];
+    if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0] || !candidate.content.parts[0].text) {
+      throw new Error("Resposta da IA incompleta (motivo: " + (candidate.finishReason || 'desconhecido') + "). Tente novamente com um documento mais legível.");
+    }
+
+    // Remove eventuais cercas de markdown (```json ... ```) antes de decodificar o JSON
+    let responseJsonText = candidate.content.parts[0].text.trim();
+    responseJsonText = responseJsonText.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+    const parsedData = JSON.parse(responseJsonText);
+    
+    // Garante a estrutura mínima de "imovel" para não quebrar a renderização na interface
+    const imovelSafe = parsedData.imovel || {};
+    const finalResult = {
+      id: uniqueId,
+      timestamp: new Date().toISOString(),
+      nomeArquivo: name,
+      metodo: selectedMetodo,
+      imovel: {
+        matricula: imovelSafe.matricula || "Não identificado",
+        cartorio: imovelSafe.cartorio || "Não identificado",
+        comarca: imovelSafe.comarca || "Não identificado",
+        tipo: imovelSafe.tipo || "Não identificado",
+        dataEmissaoCertidao: imovelSafe.dataEmissaoCertidao || "Não identificada",
+        cadastroIncra: imovelSafe.cadastroIncra || "",
+        valor: imovelSafe.valor || "Não avaliado",
+        risco: imovelSafe.risco || "N/D",
+        rating: imovelSafe.rating || "N/D",
+        endereco: imovelSafe.endereco || "Não identificado",
+        area: imovelSafe.area || "Não identificado",
+        areaConstruida: imovelSafe.areaConstruida || "Não mensurada",
+        descricaoCurta: imovelSafe.descricaoCurta || "Descrição não extraída do documento.",
+        descricaoLegal: imovelSafe.descricaoLegal || "",
+        confrontacoes: imovelSafe.confrontacoes || []
+      },
+      proprietarios: parsedData.proprietarios || [],
+      gravames: parsedData.gravames || [],
+      alertas: parsedData.alertas || [],
+      cadeiaDominial: parsedData.cadeiaDominial || [],
+      parecerConsolidado: parsedData.parecerConsolidado || "Análise concluída sem parecer textual.",
+      status: parsedData.status || "EM REVISÃO"
+    };
+    
+    // Grava no banco
+    const currentList = listarAnalises();
+    currentList.unshift(finalResult);
+    salvarBancoLocal(currentList);
+    
+    // Auto-exporta se houver planilha ativa
+    const sysConf = getSystemConfig();
+    if (sysConf.spreadsheetUrl) {
+      try {
+        exportarParaSheets(uniqueId);
+      } catch (e) {
+        // Ignora erro
+      }
+    }
+    
+    return finalResult;
+    
+  } catch (err) {
+    throw new Error("Falha ao se comunicar com o cérebro da Inteligência Artificial: " + err.toString());
+  }
+}
+
+/**
+ * Dados de simulação iniciais para preencher o sistema
+ */
+function obterAnalisesPadrao() {
+  return [
+    {
+      id: "CRT-8821",
+      timestamp: "2026-06-25T14:30:00.000Z",
+      nomeArquivo: "Matricula_Lakeside_Plaza.pdf",
+      status: "LIBERADO",
+      metodo: "Especialista Imobiliário v4",
+      imovel: {
+        matricula: "34.512",
+        comarca: "Cascavel - PR",
+        valor: "R$ 4.250.000,00",
+        risco: "1.2/10",
+        rating: "AAA+",
+        endereco: "Avenida Brasil, 4550, Centro, Cascavel - PR",
+        area: "1.250 m²",
+        descricaoCurta: "Terreno urbano comercial de formato regular contendo edificação em alvenaria com 850 m² de área construída, destinado a comércio."
+      },
+      proprietarios: [
+        {
+          nome: "Carlos Alberto Santos",
+          documento: "123.456.789-00",
+          participacao: "60%",
+          status: "REGULAR"
+        },
+        {
+          nome: "Investimentos Imobiliários Cresol S.A.",
+          documento: "00.123.456/0001-99",
+          participacao: "40%",
+          status: "REGULAR"
+        }
+      ],
+      alertas: [
+        {
+          titulo: "Alienação Fiduciária em Vigor",
+          descricao: "Averbação R-4 aponta alienação fiduciária em favor do Banco Central, porém já em fase de termo de quitação registrado na AV-5. Garantia livre.",
+          tipo: "INFORMAÇÃO"
+        }
+      ],
+      cadeiaDominial: [
+        {
+          data: "12/05/2019",
+          tipoTransacao: "Compra e Venda",
+          adquirente: "Carlos Alberto Santos",
+          transmitente: "Empreendimentos Alfa Ltda",
+          registro: "R-3/34.512",
+          detalhes: "Adquirido pelo valor histórico de R$ 2.800.000,00 por escritura pública de compra e venda."
+        }
+      ],
+      parecerConsolidado: "O imóvel apresenta excelente liquidez e solidez documental. O terreno está localizado em área comercial valorizada na comarca de Cascavel. A fração ideal de 100% encontra-se livre de gravames impeditivos, estando em nome de proponentes com ficha cadastral regular perante a Cresol. O imóvel possui plena capacidade para ser constituído como garantia real fiduciária para operações de crédito de grande porte."
+    },
+    {
+      id: "CRT-8822",
+      timestamp: "2026-06-30T09:15:00.000Z",
+      nomeArquivo: "Matricula_Mountain_View.pdf",
+      status: "EM REVISÃO",
+      metodo: "Especialista Imobiliário v4",
+      imovel: {
+        matricula: "18.244",
+        comarca: "Chapecó - SC",
+        valor: "R$ 12.800.000,00",
+        risco: "6.8/10",
+        rating: "B",
+        endereco: "Marginal BR-282, KM 540, Distrito Industrial, Chapecó - SC",
+        area: "4.5 hectares (45.000 m²)",
+        descricaoCurta: "Imóvel industrial constituído por galpão com estrutura metálica de 12.000 m², estacionamento, guarita e subestação de energia própria."
+      },
+      proprietarios: [
+        {
+          nome: "Industrial Holdings S.A.",
+          documento: "11.222.333/0001-44",
+          participacao: "100%",
+          status: "ATENÇÃO"
+        }
+      ],
+      alertas: [
+        {
+          titulo: "Processo Trabalhista Detectado",
+          descricao: "Ação 0012345-67.2023.5.04.0001 tramitando na 2ª Vara do Trabalho de Chapecó com valor de causa superior a R$ 6.000.000,00.",
+          tipo: "CRÍTICO"
+        },
+        {
+          titulo: "Indisponibilidade de Bens (AV-8)",
+          descricao: "Averbação de indisponibilidade decretada por ordem do Juízo Federal da 1ª Vara Cível de Curitiba em Jan/2024. Impede alienação fiduciária imediata.",
+          tipo: "CRÍTICO"
+        }
+      ],
+      cadeiaDominial: [
+        {
+          data: "10/11/2010",
+          tipoTransacao: "Compra e Venda",
+          adquirente: "José Carlos de Oliveira",
+          transmitente: "Siderúrgica Catarinense S.A.",
+          registro: "R-5/18.244",
+          detalhes: "Aquisição para fins de expansão metalúrgica local."
+        }
+      ],
+      parecerConsolidado: "Recomenda-se cautela extrema. O imóvel possui alto valor de mercado e excelente infraestrutura física, contudo, as restrições jurídicas averbadas representam grave risco para a cooperativa. A averbação de indisponibilidade de bens (AV-8) bloqueia preventivamente qualquer transferência de propriedade ou constituição de novos gravames de garantia. A operação de crédito deve permanecer sob REVISÃO até que seja apresentado termo de cancelamento da indisponibilidade judicial ou outorgada garantia complementar.",
+      status: "EM REVISÃO"
+    }
+  ];
 }
