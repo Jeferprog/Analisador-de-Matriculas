@@ -14,6 +14,108 @@ const PRECO_INPUT_USD_1M = 0.30;   // US$ / 1M tokens de entrada
 const PRECO_OUTPUT_USD_1M = 2.50;  // US$ / 1M tokens de saída (inclui tokens de raciocínio)
 const CAMBIO_FALLBACK = 5.40;      // usado se a cotação ao vivo falhar
 
+// Controle de acesso por perfil (baseado no e-mail logado)
+const PROP_ADMINS = 'CRESOL_ADMINS_JSON';
+const ADMIN_INICIAL = 'jeferson.deimling@cresolsicoper.com.br';
+
+/**
+ * E-mail do usuário logado (domínio Cresol), em minúsculas. Vazio se não for possível identificar.
+ */
+function getUsuarioAtual() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    return email ? email.trim().toLowerCase() : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * Lista de e-mails administradores. Garante o admin inicial sempre presente.
+ */
+function getAdmins() {
+  const props = PropertiesService.getScriptProperties();
+  let lista = [];
+  const raw = props.getProperty(PROP_ADMINS);
+  if (raw) {
+    try { lista = JSON.parse(raw); } catch (e) { lista = []; }
+  }
+  if (!Array.isArray(lista)) lista = [];
+  const inicial = ADMIN_INICIAL.toLowerCase();
+  const jaTem = lista.some(function(e) { return String(e).trim().toLowerCase() === inicial; });
+  if (!jaTem) {
+    lista.unshift(ADMIN_INICIAL);
+    props.setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return lista;
+}
+
+/**
+ * Indica se um e-mail é administrador.
+ */
+function isAdmin(email) {
+  if (!email) return false;
+  const e = String(email).trim().toLowerCase();
+  return getAdmins().some(function(a) { return String(a).trim().toLowerCase() === e; });
+}
+
+/**
+ * Sessão do usuário para a interface: e-mail, se é admin e (para admins) a lista de admins.
+ */
+function getSessao() {
+  const email = getUsuarioAtual();
+  const admin = isAdmin(email);
+  return {
+    email: email,
+    isAdmin: admin,
+    admins: admin ? getAdmins() : []
+  };
+}
+
+/**
+ * Barreira de segurança: lança erro se o chamador não for administrador.
+ * Usada nas funções sensíveis (Importação IA e Configurações).
+ */
+function exigirAdmin() {
+  const email = getUsuarioAtual();
+  if (!isAdmin(email)) {
+    const detalhe = email
+      ? ' (' + email + ')'
+      : '. Não foi possível identificar seu e-mail — verifique se está logado com a conta Cresol e se o app está publicado com acesso restrito ao domínio.';
+    throw new Error('Acesso restrito: apenas administradores podem executar esta ação' + detalhe);
+  }
+  return email;
+}
+
+/**
+ * Cadastra um novo administrador (somente admin).
+ */
+function adicionarAdmin(email) {
+  exigirAdmin();
+  const e = String(email || '').trim().toLowerCase();
+  if (!e || e.indexOf('@') === -1) throw new Error('E-mail inválido.');
+  const lista = getAdmins();
+  if (!lista.some(function(x) { return String(x).trim().toLowerCase() === e; })) {
+    lista.push(e);
+    PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return { success: true, admins: lista, message: 'Administrador ' + e + ' cadastrado com sucesso.' };
+}
+
+/**
+ * Remove um administrador (somente admin). O admin principal não pode ser removido.
+ */
+function removerAdmin(email) {
+  exigirAdmin();
+  const e = String(email || '').trim().toLowerCase();
+  if (e === ADMIN_INICIAL.toLowerCase()) {
+    throw new Error('O administrador principal não pode ser removido.');
+  }
+  const lista = getAdmins().filter(function(x) { return String(x).trim().toLowerCase() !== e; });
+  PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
+  return { success: true, admins: lista, message: 'Administrador ' + e + ' removido.' };
+}
+
 /**
  * Renderiza a interface do usuário (Single Page Application)
  */
@@ -55,6 +157,7 @@ function getGeminiApiKey() {
  * Salva uma ou mais chaves de API do Gemini (uma por linha) de forma segura.
  */
 function salvarGeminiApiKey(key) {
+  exigirAdmin(); // Configuração de chaves restrita a administradores
   const props = PropertiesService.getScriptProperties();
   const keys = String(key || '').split(/[\r\n,;]+/)
                  .map(function(k) { return k.trim(); })
@@ -106,6 +209,7 @@ function getSystemConfig() {
  * Salva as configurações de integração do Google Sheets
  */
 function salvarSystemConfig(config) {
+  exigirAdmin(); // Configurações restritas a administradores
   const systemConfig = {
     spreadsheetUrl: config.spreadsheetUrl || '',
     abaPrincipal: config.abaPrincipal || 'DB_IMPORTACOES',
@@ -800,6 +904,7 @@ function calcularCusto(usage) {
  * Envia o documento para análise via API do Gemini
  */
 function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
+  exigirAdmin(); // Importação IA restrita a administradores
   const selectedMetodo = metodo || "Especialista Imobiliário v4";
   const name = fileName || "Documento.txt";
   const uniqueId = "CRT-" + Math.floor(1000 + Math.random() * 9000);

@@ -133,9 +133,12 @@
 
     <!-- Rodapé Cooperativa -->
     <div class="p-4 border-t border-border-gray bg-bg-body/50">
-      <div class="flex items-center gap-3 text-xs text-text-gray mb-3">
-        <i data-lucide="calendar" class="w-4 h-4"></i>
-        <span>Google Apps Script v1.0</span>
+      <div class="flex items-start gap-2 text-xs mb-3 bg-white border border-border-gray rounded-lg p-2.5">
+        <i data-lucide="user-circle" class="w-4 h-4 shrink-0 text-primary-green mt-0.5"></i>
+        <div class="min-w-0">
+          <p id="user-email" class="text-[11px] font-semibold text-text-dark truncate">—</p>
+          <span id="user-role" class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-bg-body text-text-gray">Consulta</span>
+        </div>
       </div>
       <div class="bg-primary-green text-white p-3 rounded-lg flex flex-col gap-1">
         <span class="text-[10px] uppercase font-bold tracking-wider opacity-80">Cooperativa Cresol</span>
@@ -157,7 +160,7 @@
           — Integrado com Google Workspace
         </span>
       </div>
-      <button onclick="switchView('importacao')" class="bg-accent-orange hover:bg-accent-orange/95 text-white text-xs font-bold px-4 py-2 rounded shadow transition-all flex items-center gap-2">
+      <button id="btn-nova-importacao" onclick="switchView('importacao')" class="bg-accent-orange hover:bg-accent-orange/95 text-white text-xs font-bold px-4 py-2 rounded shadow transition-all flex items-center gap-2">
         <i data-lucide="plus" class="w-4 h-4"></i>
         <span>Nova Importação</span>
       </button>
@@ -711,6 +714,29 @@
             </div>
           </div>
 
+          <!-- Administradores (controle de acesso) -->
+          <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden lg:col-span-2">
+            <div class="p-6 border-b border-border-gray">
+              <h3 class="font-bold text-primary-green flex items-center gap-2 text-sm uppercase tracking-wider">
+                <i data-lucide="users-round" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Administradores do Sistema
+              </h3>
+              <p class="text-xs text-text-gray mt-1">Apenas administradores acessam as abas <strong>Importação IA</strong> e <strong>Configurações</strong>. O acesso é definido pelo e-mail logado (conta Cresol).</p>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="flex flex-col sm:flex-row gap-3">
+                <input type="email" id="novo-admin-email" placeholder="email@cresolsicoper.com.br" class="flex-1 border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <button onclick="adicionarAdminUI()" class="bg-primary-green hover:bg-primary-green/95 text-white font-bold text-xs px-5 py-3 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+                  <i data-lucide="user-plus" class="w-4 h-4"></i>
+                  <span>Adicionar Admin</span>
+                </button>
+              </div>
+              <div id="admins-list" class="space-y-2">
+                <!-- Dinâmico -->
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -725,6 +751,7 @@
     let selectedAnalysis = null;
     let selectedFileBase64 = ''; // DataURL do PDF/imagem anexado, enviado à IA para OCR
     let isAnalyzing = false; // impede envios simultâneos enquanto uma análise está em andamento
+    let sessao = { email: '', isAdmin: false, admins: [] }; // usuário logado e perfil
     const ANALYZE_TIMEOUT_MS = 360000; // 6 min — limite máximo de execução do Apps Script
     let config = {
       spreadsheetUrl: '',
@@ -736,8 +763,58 @@
     // Initialization on window load
     window.onload = function() {
       lucide.createIcons();
-      loadInitialData();
+      loadSessao();
     };
+
+    // Identifica o usuário logado e o perfil antes de montar a interface
+    function loadSessao() {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(s) {
+            sessao = s || { email: '', isAdmin: false, admins: [] };
+            applyPermissions();
+            loadInitialData();
+          })
+          .withFailureHandler(function(err) {
+            sessao = { email: '', isAdmin: false, admins: [] };
+            applyPermissions();
+            loadInitialData();
+          })
+          .getSessao();
+      } else {
+        // Preview local (fora do Apps Script): libera tudo para desenvolvimento
+        sessao = { email: 'preview@local', isAdmin: true, admins: [] };
+        applyPermissions();
+        loadInitialData();
+      }
+    }
+
+    // Aplica as permissões de perfil na interface
+    function applyPermissions() {
+      const admin = !!(sessao && sessao.isAdmin);
+
+      const navImp = document.getElementById('nav-importacao');
+      const navCfg = document.getElementById('nav-configuracoes');
+      const btnNova = document.getElementById('btn-nova-importacao');
+      if (navImp) navImp.classList.toggle('hidden', !admin);
+      if (navCfg) navCfg.classList.toggle('hidden', !admin);
+      if (btnNova) btnNova.classList.toggle('hidden', !admin);
+
+      const emailEl = document.getElementById('user-email');
+      const roleEl = document.getElementById('user-role');
+      if (emailEl) emailEl.innerText = (sessao && sessao.email) ? sessao.email : 'não identificado';
+      if (roleEl) {
+        roleEl.innerText = admin ? 'Administrador' : 'Consulta';
+        roleEl.className = "text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded " +
+          (admin ? 'bg-primary-green text-white' : 'bg-bg-body text-text-gray');
+      }
+
+      // Se um não-admin estiver numa aba restrita, volta para o dashboard
+      if (!admin && (currentView === 'importacao' || currentView === 'configuracoes')) {
+        switchView('dashboard');
+      }
+      if (admin) renderAdmins();
+    }
 
     // Load initial config and analyses from Google Apps Script
     function loadInitialData() {
@@ -814,6 +891,12 @@
 
     // Switch views SPA
     function switchView(viewId) {
+      // Bloqueio de acesso: abas restritas só para administradores
+      if ((viewId === 'importacao' || viewId === 'configuracoes') && !(sessao && sessao.isAdmin)) {
+        showToast("error", "Acesso restrito: apenas administradores podem acessar esta área.");
+        viewId = 'dashboard';
+      }
+
       currentView = viewId;
       document.getElementById('view-dashboard').classList.add('hidden');
       document.getElementById('view-importacao').classList.add('hidden');
@@ -1388,6 +1471,86 @@
           document.getElementById('config-gemini-key').value = '';
           showToast("success", "Simulação: chaves de teste atualizadas!");
         }, 1000);
+      }
+    }
+
+    // ===== Administradores =====
+    function renderAdmins() {
+      const wrap = document.getElementById('admins-list');
+      if (!wrap) return;
+      const admins = (sessao && Array.isArray(sessao.admins)) ? sessao.admins : [];
+      wrap.innerHTML = '';
+      if (admins.length === 0) {
+        wrap.innerHTML = `<p class="text-xs text-text-gray">Nenhum administrador cadastrado.</p>`;
+        return;
+      }
+      admins.forEach(function(email) {
+        const principal = String(email).toLowerCase() === 'jeferson.deimling@cresolsicoper.com.br';
+        wrap.innerHTML += `
+          <div class="flex items-center justify-between gap-3 px-3 py-2 bg-bg-body rounded-lg border border-border-gray">
+            <span class="text-sm text-text-dark font-mono truncate flex items-center gap-2">
+              <i data-lucide="user" class="w-3.5 h-3.5 text-primary-green shrink-0"></i>
+              ${esc(email)}
+              ${principal ? '<span class="text-[9px] font-bold bg-primary-green text-white px-1.5 py-0.5 rounded uppercase">principal</span>' : ''}
+            </span>
+            ${principal ? '' : `<button onclick="removerAdminUI('${esc(email)}')" title="Remover" class="text-danger-red hover:bg-danger-red/10 p-1.5 rounded transition-all shrink-0"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`}
+          </div>`;
+      });
+      lucide.createIcons();
+    }
+
+    function adicionarAdminUI() {
+      const input = document.getElementById('novo-admin-email');
+      const email = (input.value || '').trim();
+      if (!email || email.indexOf('@') === -1) {
+        showToast("error", "Informe um e-mail válido.");
+        return;
+      }
+      showLoading("Cadastrando administrador...");
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            sessao.admins = res.admins || sessao.admins;
+            input.value = '';
+            renderAdmins();
+            hideLoading();
+            showToast("success", res.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao cadastrar: " + err);
+          })
+          .adicionarAdmin(email);
+      } else {
+        sessao.admins = (sessao.admins || []).concat([email.toLowerCase()]);
+        input.value = '';
+        renderAdmins();
+        hideLoading();
+        showToast("success", "Simulação: admin adicionado localmente.");
+      }
+    }
+
+    function removerAdminUI(email) {
+      if (!confirm("Remover o administrador " + email + "?")) return;
+      showLoading("Removendo administrador...");
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            sessao.admins = res.admins || [];
+            renderAdmins();
+            hideLoading();
+            showToast("success", res.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao remover: " + err);
+          })
+          .removerAdmin(email);
+      } else {
+        sessao.admins = (sessao.admins || []).filter(e => String(e).toLowerCase() !== String(email).toLowerCase());
+        renderAdmins();
+        hideLoading();
+        showToast("success", "Simulação: admin removido localmente.");
       }
     }
 
