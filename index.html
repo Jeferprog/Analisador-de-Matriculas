@@ -271,7 +271,7 @@
                   <th class="px-6 py-4">Comarca / UF</th>
                   <th class="px-6 py-4">Área Total</th>
                   <th class="px-6 py-4">Data Emissão Certidão</th>
-                  <th class="px-6 py-4">Proprietário(s)</th>
+                  <th class="px-6 py-4 min-w-[360px]">Proprietário(s)</th>
                   <th class="px-6 py-4">CPF's / CNPJ's</th>
                   <th class="px-6 py-4 text-center">Status</th>
                   <th class="px-6 py-4">Data e Hora</th>
@@ -962,7 +962,7 @@
           <td class="px-6 py-4 text-text-dark align-top">${esc(imo.comarca || '—')}</td>
           <td class="px-6 py-4 text-text-dark align-top whitespace-nowrap">${esc(imo.area || '—')}</td>
           <td class="px-6 py-4 text-text-gray text-xs align-top whitespace-nowrap">${esc(imo.dataEmissaoCertidao || '—')}</td>
-          <td class="px-6 py-4 text-text-dark align-top">${nomes}</td>
+          <td class="px-6 py-4 text-text-dark align-top min-w-[360px] whitespace-normal">${nomes}</td>
           <td class="px-6 py-4 font-mono text-xs text-text-gray align-top">${docs}</td>
           <td class="px-6 py-4 text-center align-top whitespace-nowrap">
             <span class="px-3 py-1 rounded-full text-[10px] font-black tracking-wider ${statusBadgeClass(item.status)}">
