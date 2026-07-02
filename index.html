@@ -237,6 +237,7 @@
                 <option value="TODOS">Todos os Status</option>
                 <option value="LIBERADO">Liberado</option>
                 <option value="VALIDADO">Validado</option>
+                <option value="ATUALIZADO">Atualizado</option>
                 <option value="EM REVISÃO">Em Revisão</option>
                 <option value="REJEITADO">Rejeitado</option>
               </select>
@@ -268,6 +269,8 @@
                   <th class="px-6 py-4">ID do Lote</th>
                   <th class="px-6 py-4">Nº Matrícula</th>
                   <th class="px-6 py-4">Comarca / UF</th>
+                  <th class="px-6 py-4">Área Total</th>
+                  <th class="px-6 py-4">Data Emissão Certidão</th>
                   <th class="px-6 py-4">Proprietário(s)</th>
                   <th class="px-6 py-4">CPF's / CNPJ's</th>
                   <th class="px-6 py-4 text-center">Status</th>
@@ -287,40 +290,7 @@
       <div id="view-importacao" class="hidden space-y-8">
         <div>
           <h2 class="text-2xl font-bold text-primary-green">Central de Importação e OCR IA</h2>
-          <p class="text-sm text-text-gray mt-1">Carregue um arquivo de matrícula de teste ou cole a transcrição em texto abaixo.</p>
-        </div>
-
-        <!-- Predefined Samples -->
-        <div class="bg-white p-6 rounded-lg soft-shadow border border-border-gray">
-          <h3 class="font-bold text-sm text-primary-green mb-3 uppercase tracking-wider flex items-center gap-2">
-            <i data-lucide="check-circle" class="text-accent-orange w-5 h-5"></i>
-            Amostras Prontas para Teste de Conceito
-          </h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div onclick="selectSample('rural')" class="p-4 rounded-lg border-2 border-border-gray hover:border-primary-green bg-bg-body/50 cursor-pointer transition-all">
-              <div class="flex justify-between items-center mb-1">
-                <span class="font-bold text-sm text-text-dark">Fazenda Bela Vista (Rural)</span>
-                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary-green text-white">RURAL</span>
-              </div>
-              <p class="text-xs text-text-gray">Imóvel regular de 420 hectares em Sorriso-MT.</p>
-            </div>
-
-            <div onclick="selectSample('urbano')" class="p-4 rounded-lg border-2 border-border-gray hover:border-primary-green bg-bg-body/50 cursor-pointer transition-all">
-              <div class="flex justify-between items-center mb-1">
-                <span class="font-bold text-sm text-text-dark">Apto Moinhos (Urbano - Alto Risco)</span>
-                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-accent-orange text-white">URBANO</span>
-              </div>
-              <p class="text-xs text-text-gray">Indisponibilidade de bens e penhora cível.</p>
-            </div>
-
-            <div onclick="selectSample('industrial')" class="p-4 rounded-lg border-2 border-border-gray hover:border-primary-green bg-bg-body/50 cursor-pointer transition-all">
-              <div class="flex justify-between items-center mb-1">
-                <span class="font-bold text-sm text-text-dark">Galpão BR-282 (Industrial)</span>
-                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-text-gray text-white">INDUSTRIAL</span>
-              </div>
-              <p class="text-xs text-text-gray">Servidão de passagem e litígio trabalhista.</p>
-            </div>
-          </div>
+          <p class="text-sm text-text-gray mt-1">Carregue o arquivo da matrícula (PDF ou foto) ou cole a transcrição em texto abaixo.</p>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -380,7 +350,7 @@
                 </label>
               </div>
 
-              <button onclick="submitAnalysis()" class="w-full bg-accent-orange hover:bg-accent-orange/95 text-white font-bold py-3.5 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 text-sm">
+              <button id="btn-submit-analysis" onclick="submitAnalysis()" class="w-full bg-accent-orange hover:bg-accent-orange/95 text-white font-bold py-3.5 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed">
                 <i data-lucide="file-check-2" class="w-5 h-5"></i>
                 <span>Enviar para IA</span>
               </button>
@@ -457,6 +427,10 @@
             </button>
             <button id="tab-btn-parecer" onclick="switchAnalysisTab('parecer')" class="px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark">
               Parecer Consolidado
+            </button>
+            <button id="tab-btn-historico" onclick="switchAnalysisTab('historico')" class="px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark flex items-center gap-1.5">
+              <span>Histórico de Alterações</span>
+              <span id="historico-badge-count" class="bg-purple-500 text-white text-[9px] px-1.5 py-0.2 rounded font-black">0</span>
             </button>
           </div>
 
@@ -636,6 +610,18 @@
               </div>
             </div>
 
+            <!-- Tab Contents: Historico de Alteracoes -->
+            <div id="tab-content-historico" class="hidden space-y-4">
+              <h4 class="font-bold text-sm text-primary-green uppercase mb-3 flex items-center gap-2">
+                <i data-lucide="history" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Linha do Tempo das Reimportações
+              </h4>
+              <p class="text-xs text-text-gray -mt-2">Cada reimportação desta matrícula registra abaixo o que mudou em relação à versão anterior.</p>
+              <div id="detail-historico-list" class="space-y-3">
+                <!-- Dinâmico -->
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -694,7 +680,7 @@
                 <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Suas API Keys do Gemini (uma por linha)</label>
                 <textarea id="config-gemini-key" rows="3" placeholder="Cole uma ou mais chaves de API, uma por linha.&#10;Ex.:&#10;AIzaSy...chave1&#10;AIzaSy...chave2" class="w-full border border-border-gray rounded-lg p-2.5 text-sm font-mono outline-none focus:ring-1 focus:ring-primary-green"></textarea>
                 <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">
-                  Cadastre <strong>uma chave por linha</strong>. Ao atingir o limite de cota de uma chave, o sistema passa automaticamente para a próxima. As chaves ficam salvas com segurança nas propriedades do Script Google. Deixe em branco para usar o motor de simulação.
+                  Cadastre <strong>uma chave por linha</strong>. Ao atingir o limite de cota de uma chave, o sistema passa automaticamente para a próxima. As chaves ficam salvas com segurança nas propriedades do Script Google. É necessária ao menos uma chave para processar matrículas.
                 </p>
               </div>
 
@@ -722,37 +708,13 @@
     let analyses = [];
     let selectedAnalysis = null;
     let selectedFileBase64 = ''; // DataURL do PDF/imagem anexado, enviado à IA para OCR
+    let isAnalyzing = false; // impede envios simultâneos enquanto uma análise está em andamento
+    const ANALYZE_TIMEOUT_MS = 360000; // 6 min — limite máximo de execução do Apps Script
     let config = {
       spreadsheetUrl: '',
       abaPrincipal: '',
       abaAlertas: '',
       geminiKeyConfigured: false
-    };
-
-    // Sample data to simulate PDF text
-    const sampleTexts = {
-      rural: `MATRÍCULA Nº 14.880 - OFÍCIO DE REGISTRO DE IMÓVEIS DE SORRISO - MT.
-Imóvel: Uma área de terras rurais com 420,0000 hectares, denominada 'Gleba Cedro', desmembrada da Fazenda Bela Vista, situada no Município de Sorriso - MT. Limites e confrontações: Partindo do marco M-1, segue confrontando com terras de Waldir Schultz...
-Proprietário: Egon Schultz, brasileiro, casado, produtor rural, portador do CPF nº 444.555.666-12, residente e domiciliado na Fazenda Cedro.
-Ônus e Gravames:
-AV-4/14.880 - Contrato de Arrendamento Agrícola em favor de Cooperativa Agroindustrial para plantio de algodão com prazo determinado até Junho de 2027.
-AV-6/14.880 - Cadastro Ambiental Rural (CAR) homologado sob o nº MT-5107909-66F5.B678, atestando 20% de área de Reserva Legal totalmente preservada e regularizada. CCIR e ITR do exercício de 2025 rigorosamente quitados. Georreferenciamento devidamente certificado.`,
-      
-      urbano: `MATRÍCULA Nº 22.315 - 1º OFÍCIO DE REGISTRO DE IMÓVEIS DE PORTO ALEGRE - RS.
-Imóvel: Apartamento nº 402, localizado no 4º andar do Edifício Residencial Gonçalo, situado na Rua Gonçalo de Carvalho, nº 320, bairro Moinhos de Vento, com área privativa de 145,00 m², correspondendo-lhe a fração ideal de 0,085 no terreno e coisas comuns.
-Proprietários: Julio Cesar Brandão, brasileiro, divorciado, empresário, CPF nº 777.888.999-11 (fração de 50%) e Marta Helena Brandão, brasileira, solteira, CPF nº 888.999.000-22 (fração de 50%).
-Ônus e Registros:
-R-7/22.315 - Adjudicação por Herança dos bens deixados por Orlando Brandão.
-AV-9/22.315 - PENHORA JUDICIAL determinada pelo Juízo da 12ª Vara Cível de Porto Alegre, nos autos do Processo de Execução nº 5001245-88.2023.8.21.0001, movido por Condomínio Edifício Gonçalo, para garantia do débito de condomínio de R$ 94.000,00.
-AV-11/22.315 - INDISPONIBILIDADE DE BENS decretada contra o co-proprietário Julio Cesar Brandão pelo Juiz Federal da 1ª Vara Cível de Curitiba, nos autos da Execução Fiscal nº 5012344-99.2024.4.04.7100, no valor acumulado de R$ 420.000,00.`,
-      
-      industrial: `MATRÍCULA Nº 18.244 - OFÍCIO DE REGISTRO DE IMÓVEIS DE CHAPECÓ - SC.
-Imóvel: Uma área de terras com 45.000,00 m² (4.5 hectares), situada no Distrito Industrial, confrontando com a Marginal da Rodovia BR-282, KM 540, contendo um galpão de estrutura metálica para fins industriais com 12.000,00 m² de área construída.
-Proprietário: Industrial Holdings S.A., CNPJ nº 11.222.333/0001-44, com sede em Chapecó - SC.
-Registros e Averbações:
-AV-4/18.244 - SERVIDÃO DE PASSAGEM perpétua instituída em favor da concessionária de energia elétrica para passagem de Linha de Transmissão de Alta Tensão, cobrindo uma faixa de 15% da área total útil do imóvel.
-AV-7/18.244 - Existência de Ação Trabalhista sob o nº 0012345-67.2023.5.04.0001 distribuída pela 2ª Vara do Trabalho de Chapecó, movida por sindicato de classe contra o proprietário, com valor estimado em R$ 6.000,00.
-AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trabalho.`
     };
 
     // Initialization on window load
@@ -780,35 +742,8 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
           })
           .listarAnalises();
       } else {
-        // Fallback para preview local caso aberto fora do Apps Script
-        analyses = [
-          {
-            id: "CRT-8821",
-            timestamp: new Date().toISOString(),
-            nomeArquivo: "Matricula_Lakeside_Plaza.pdf",
-            status: "LIBERADO",
-            metodo: "Especialista Imobiliário v4",
-            imovel: {
-              matricula: "34.512",
-              comarca: "Cascavel - PR",
-              valor: "R$ 4.250.000,00",
-              risco: "1.2/10",
-              rating: "AAA+",
-              endereco: "Avenida Brasil, 4550, Centro, Cascavel - PR",
-              area: "1.250 m²",
-              descricaoCurta: "Terreno urbano comercial de formato regular contendo edificação em alvenaria com 850 m² de área construída, destinado a comércio."
-            },
-            proprietarios: [
-              { nome: "Carlos Alberto Santos", documento: "123.456.789-00", participacao: "60%", status: "REGULAR" },
-              { nome: "Investimentos Cresol S.A.", documento: "00.123.456/0001-99", participacao: "40%", status: "REGULAR" }
-            ],
-            alertas: [
-              { titulo: "CAR Homologado", descricao: "Cadastro Ambiental Rural validado e regularizado.", tipo: "INFORMAÇÃO" }
-            ],
-            cadeiaDominial: [],
-            parecerConsolidado: "O imóvel apresenta excelente liquidez e solidez documental. Aprovado."
-          }
-        ];
+        // Fora do ambiente Apps Script (preview local): inicia sem registros
+        analyses = [];
         loadConfigData();
       }
     }
@@ -855,8 +790,8 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
         badge.className = "p-3 rounded-lg bg-success-green/10 text-success-green border border-success-green/20 text-xs flex items-center gap-2";
         badge.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> <strong>${n} chave(s) Gemini ativa(s)!</strong> Análises pela IA real${n > 1 ? ', com rotação automática ao esgotar cada chave.' : '.'}`;
       } else {
-        badge.className = "p-3 rounded-lg bg-accent-orange/10 text-accent-orange border border-accent-orange/20 text-xs flex items-center gap-2";
-        badge.innerHTML = `<i data-lucide="info" class="w-4 h-4"></i> <strong>Modo Simulação Inteligente</strong>. Insira sua chave Gemini API para habilitar a inteligência real.`;
+        badge.className = "p-3 rounded-lg bg-danger-red/10 text-danger-red border border-danger-red/20 text-xs flex items-center gap-2";
+        badge.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4"></i> <strong>Nenhuma chave configurada.</strong> Cadastre ao menos uma chave Gemini API para processar matrículas.`;
       }
       lucide.createIcons();
     }
@@ -884,15 +819,6 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
         }
       });
       lucide.createIcons();
-    }
-
-    // Select pre-loaded sample
-    function selectSample(type) {
-      selectedFileBase64 = ''; // amostra é texto puro, não há arquivo binário
-      document.getElementById('document-textarea').value = sampleTexts[type];
-      document.getElementById('selected-file-label').classList.remove('hidden');
-      document.getElementById('gas-file-name').innerText = "Matricula_Amostra_" + type.toUpperCase() + ".txt";
-      showToast("success", "Amostra '" + type + "' carregada com sucesso para análise!");
     }
 
     // Handle Local File Selected (PDF, imagem/foto ou TXT)
@@ -974,6 +900,7 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
     function statusBadgeClass(status) {
       if (status === 'LIBERADO') return 'bg-success-green/10 text-success-green border border-success-green/20';
       if (status === 'VALIDADO') return 'bg-info-blue/10 text-info-blue border border-info-blue/20';
+      if (status === 'ATUALIZADO') return 'bg-purple-500/10 text-purple-600 border border-purple-500/20';
       if (status === 'EM REVISÃO') return 'bg-accent-orange/10 text-accent-orange border border-accent-orange/20';
       return 'bg-danger-red/10 text-danger-red border border-danger-red/20';
     }
@@ -985,7 +912,9 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
 
       if (!Array.isArray(analyses)) analyses = [];
       const query = document.getElementById('search-input').value.toLowerCase();
+      const queryNum = query.replace(/[^a-z0-9]/g, ''); // busca de matrícula/CPF ignorando pontos/traços
       const statusFilter = document.getElementById('status-filter').value;
+      const soAlfaNum = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
       const filtered = analyses.filter(item => {
         if (!item) return false;
@@ -993,13 +922,12 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
         const props = Array.isArray(item.proprietarios) ? item.proprietarios : [];
         const matchesStatus = statusFilter === 'TODOS' || item.status === statusFilter;
         const matchesSearch = String(item.id || '').toLowerCase().includes(query) ||
-                              String(imo.matricula || '').toLowerCase().includes(query) ||
                               String(imo.comarca || '').toLowerCase().includes(query) ||
                               String(imo.endereco || '').toLowerCase().includes(query) ||
-                              props.some(p => p && (
-                                String(p.nome || '').toLowerCase().includes(query) ||
-                                String(p.documento || '').toLowerCase().includes(query)
-                              ));
+                              props.some(p => p && String(p.nome || '').toLowerCase().includes(query)) ||
+                              // Matrícula e CPF/CNPJ: compara ignorando pontos, traços e barras
+                              (!!queryNum && soAlfaNum(imo.matricula).includes(queryNum)) ||
+                              (!!queryNum && props.some(p => p && soAlfaNum(p.documento).includes(queryNum)));
         return matchesStatus && matchesSearch;
       });
 
@@ -1008,7 +936,7 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       if (filtered.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="8" class="p-8 text-center text-text-gray font-medium">
+            <td colspan="10" class="p-8 text-center text-text-gray font-medium">
               Nenhuma análise de matrícula encontrada na base de dados.
             </td>
           </tr>
@@ -1032,6 +960,8 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
           <td class="px-6 py-4 font-mono font-bold text-primary-green align-top">#${esc(item.id || '—')}</td>
           <td class="px-6 py-4 font-semibold text-text-dark align-top whitespace-nowrap">${esc(imo.matricula || '—')}</td>
           <td class="px-6 py-4 text-text-dark align-top">${esc(imo.comarca || '—')}</td>
+          <td class="px-6 py-4 text-text-dark align-top whitespace-nowrap">${esc(imo.area || '—')}</td>
+          <td class="px-6 py-4 text-text-gray text-xs align-top whitespace-nowrap">${esc(imo.dataEmissaoCertidao || '—')}</td>
           <td class="px-6 py-4 text-text-dark align-top">${nomes}</td>
           <td class="px-6 py-4 font-mono text-xs text-text-gray align-top">${docs}</td>
           <td class="px-6 py-4 text-center align-top whitespace-nowrap">
@@ -1192,6 +1122,44 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       // Tab: Parecer
       document.getElementById('info-parecer').innerText = item.parecerConsolidado || "Aguardando geração do parecer do analista Cresol.";
 
+      // Tab: Histórico de Alterações
+      const histList = document.getElementById('detail-historico-list');
+      const historico = Array.isArray(item.historico) ? item.historico : [];
+      document.getElementById('historico-badge-count').innerText = historico.length;
+      histList.innerHTML = '';
+      if (historico.length > 0) {
+        historico.forEach((h, idx) => {
+          let dataFmt = '—';
+          try { dataFmt = h.data ? new Date(h.data).toLocaleString('pt-BR') : '—'; } catch (e) { dataFmt = String(h.data || '—'); }
+          const isPrimeira = idx === historico.length - 1;
+          const mudancas = Array.isArray(h.mudancas) ? h.mudancas : [];
+          let corpo;
+          if (mudancas.length === 0) {
+            corpo = `<p class="text-xs text-text-gray italic">Reimportado sem alterações em relação à versão anterior.</p>`;
+          } else {
+            corpo = '<ul class="space-y-1.5 mt-2">' + mudancas.map(m => `
+              <li class="text-xs text-text-dark flex items-start gap-2">
+                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-bg-body border border-border-gray text-text-gray whitespace-nowrap mt-0.5">${esc(m.categoria || '—')}</span>
+                <span>${esc(m.descricao || '')}</span>
+              </li>`).join('') + '</ul>';
+          }
+          histList.innerHTML += `
+            <div class="p-4 rounded-lg border ${isPrimeira ? 'border-primary-green/20 bg-primary-green/5' : 'border-purple-500/20 bg-purple-500/5'}">
+              <div class="flex flex-wrap justify-between items-center gap-2">
+                <span class="font-bold text-sm text-text-dark flex items-center gap-2">
+                  <i data-lucide="${isPrimeira ? 'flag' : 'refresh-cw'}" class="w-4 h-4 ${isPrimeira ? 'text-primary-green' : 'text-purple-600'}"></i>
+                  ${isPrimeira ? 'Importação inicial' : 'Reimportação'}
+                </span>
+                <span class="text-[11px] text-text-gray">${dataFmt}${h.dataCertidao ? ' • Certidão: ' + esc(h.dataCertidao) : ''}</span>
+              </div>
+              ${h.arquivo ? `<p class="text-[10px] text-text-gray mt-0.5">Arquivo: ${esc(h.arquivo)}</p>` : ''}
+              ${corpo}
+            </div>`;
+        });
+      } else {
+        histList.innerHTML = `<p class="text-xs text-text-gray">Sem histórico de reimportações. Ao reimportar esta matrícula, as alterações aparecerão aqui.</p>`;
+      }
+
       switchView('analise');
       switchAnalysisTab('proprietarios');
     }
@@ -1199,7 +1167,7 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
     // Switch inside tabs of detailed analysis
     function switchAnalysisTab(tabId) {
       activeAnalysisTab = tabId;
-      const tabs = ['proprietarios', 'imovel', 'alertas', 'parecer'];
+      const tabs = ['proprietarios', 'imovel', 'alertas', 'parecer', 'historico'];
       tabs.forEach(id => {
         const btn = document.getElementById('tab-btn-' + id);
         const content = document.getElementById('tab-content-' + id);
@@ -1213,8 +1181,22 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
       });
     }
 
+    // Habilita/desabilita o botão de envio para evitar cliques repetidos
+    function setSubmitEnabled(enabled) {
+      const btn = document.getElementById('btn-submit-analysis');
+      if (!btn) return;
+      btn.disabled = !enabled;
+      btn.classList.toggle('opacity-60', !enabled);
+      btn.classList.toggle('cursor-not-allowed', !enabled);
+    }
+
     // Call Google Apps Script backend to analyze text
     function submitAnalysis() {
+      if (isAnalyzing) {
+        showToast("error", "Já existe uma análise em andamento. Aguarde a conclusão antes de enviar outra.");
+        return;
+      }
+
       const text = document.getElementById('document-textarea').value.trim();
       const model = document.getElementById('param-model').value;
       const fileName = document.getElementById('gas-file-name').innerText || "Matricula_Importada.pdf";
@@ -1224,13 +1206,17 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
         return;
       }
 
+      isAnalyzing = true;
+      setSubmitEnabled(false);
       showLoading(selectedFileBase64
-        ? "O analista de IA da Cresol está fazendo o OCR e interpretando o documento..."
-        : "O cérebro artificial da Cresol está lendo sua certidão...");
+        ? "O analista de IA da Cresol está fazendo o OCR e interpretando o documento... A leitura de documentos pode levar até 1-2 minutos."
+        : "O cérebro artificial da Cresol está lendo sua certidão...", ANALYZE_TIMEOUT_MS);
 
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(result) {
+            isAnalyzing = false;
+            setSubmitEnabled(true);
             // Upsert: se a matrícula já existia (merge), atualiza; senão insere
             const idx = analyses.findIndex(a => a && a.id === result.id);
             let merged = false;
@@ -1246,46 +1232,18 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
               : "Matrícula #" + result.id + " processada perfeitamente via IA!");
           })
           .withFailureHandler(function(err) {
+            isAnalyzing = false;
+            setSubmitEnabled(true);
             hideLoading();
             showToast("error", "Erro ao processar matrícula: " + err);
           })
           .processarMatriculaIA(selectedFileBase64, fileName, text, model);
       } else {
-        // Simulação client-side se estiver fora do ambiente GAS
-        setTimeout(() => {
-          const mockId = "CRT-" + Math.floor(1000 + Math.random() * 9000);
-          const mockObj = {
-            id: mockId,
-            timestamp: new Date().toISOString(),
-            nomeArquivo: fileName,
-            metodo: model,
-            imovel: {
-              matricula: "41.902",
-              comarca: "Londrina - PR",
-              valor: "R$ 3.800.000,00",
-              risco: "3.4/10",
-              rating: "A-",
-              endereco: "Avenida Higienópolis, 1200, Centro, Londrina - PR",
-              area: "840 m²",
-              descricaoCurta: "Sala comercial ampla ocupada por consultórios, edificada em condomínio comercial."
-            },
-            proprietarios: [
-              { nome: "Clínica Médica LonMed Ltda", documento: "12.345.678/0001-90", participacao: "100%", status: "REGULAR" }
-            ],
-            alertas: [
-              { titulo: "Averbação Premonitória Registrada", descricao: "Constatação de ação de cobrança movida contra a proprietária no valor de R$ 45.000,00.", tipo: "ATENÇÃO" }
-            ],
-            cadeiaDominial: [],
-            parecerConsolidado: "O imóvel comercial possui ótima situação. Processado via simulação client-side local.",
-            status: "EM REVISÃO"
-          };
-          analyses.unshift(mockObj);
-          updateKPIs();
-          renderTable();
-          hideLoading();
-          openAnalysis(mockObj);
-          showToast("success", "Matrícula processada via simulação de teste!");
-        }, 1500);
+        // Fora do ambiente Apps Script (preview local): o processamento real exige o backend
+        isAnalyzing = false;
+        setSubmitEnabled(true);
+        hideLoading();
+        showToast("error", "O processamento por IA só está disponível quando publicado no Google Apps Script.");
       }
     }
 
@@ -1572,15 +1530,18 @@ AV-8/18.244 - INDISPONIBILIDADE DE BENS decretada pelo Tribunal Regional do Trab
     }
 
     let loadingWatchdog = null;
-    function showLoading(msg) {
+    // timeoutMs opcional: operações rápidas usam o padrão; a análise de IA passa um tempo longo.
+    function showLoading(msg, timeoutMs) {
       document.getElementById('loading-message').innerText = msg;
       document.getElementById('loading-screen').classList.remove('hidden');
       // Rede de segurança: nunca deixa o loader preso indefinidamente
       if (loadingWatchdog) clearTimeout(loadingWatchdog);
       loadingWatchdog = setTimeout(function() {
         document.getElementById('loading-screen').classList.add('hidden');
-        showToast("error", "A operação demorou mais que o esperado. Verifique a conexão/autorização do Apps Script e tente novamente.");
-      }, 25000);
+        isAnalyzing = false;
+        setSubmitEnabled(true);
+        showToast("error", "A operação demorou mais que o esperado. Ela pode ainda estar sendo processada no servidor — aguarde alguns instantes antes de reenviar para evitar análises duplicadas.");
+      }, timeoutMs || 45000);
     }
 
     function hideLoading() {

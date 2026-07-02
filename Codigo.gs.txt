@@ -292,23 +292,12 @@ function listarAnalises() {
         }
       }
     } catch (e) {
-      // Ignora erro e cai no fallback padrão do banco local simulado
+      // Ignora erro e cai no banco local
     }
   }
-  
-  // Fallback: Armazenamento em ScriptProperties ou Mock padrão
-  const localDb = PropertiesService.getScriptProperties().getProperty('CRESOL_DB_ANALYSES');
-  if (localDb) {
-    try {
-      return JSON.parse(localDb);
-    } catch (e) {
-      // Erro de parse, retorna padrões
-    }
-  }
-  
-  const padroes = obterAnalisesPadrao();
-  salvarBancoLocal(padroes);
-  return padroes;
+
+  // Fallback: banco local (ScriptProperties). Sem dados fictícios — começa vazio.
+  return getBancoLocal();
 }
 
 /**
@@ -513,14 +502,147 @@ function valorVazio(v) {
 }
 
 /**
- * Mescla uma nova análise em uma existente da MESMA matrícula:
- * preenche campos vazios e acrescenta apenas itens novos das listas (sem duplicar).
+ * Extrai a soma de áreas (em m²) mencionadas em um texto, convertendo hectares para m².
+ * Reconhece formato brasileiro (43.425,25 m²) e unidades m²/m2/ha/hectare(s).
  */
-function mesclarAnalises(existente, novo) {
+function extrairAreaM2(texto) {
+  if (!texto) return 0;
+  const re = /([\d.]+(?:,\d+)?)\s*(m²|m2|metros?\s*quadrados?|hectares?|ha)/gi;
+  let total = 0, m;
+  while ((m = re.exec(String(texto))) !== null) {
+    let num = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+    if (isNaN(num)) continue;
+    const unidade = m[2].toLowerCase();
+    if (unidade === 'ha' || unidade.indexOf('hectare') > -1) num = num * 10000; // hectare -> m²
+    total += num;
+  }
+  return total;
+}
+
+/**
+ * Formata uma área em m² no padrão brasileiro (ex.: 178.304,90 m²).
+ */
+function formatarAreaM2(m2) {
+  const val = Math.round(m2 * 100) / 100;
+  const inteiro = Math.floor(val);
+  const dec = Math.round((val - inteiro) * 100);
+  const decStr = dec < 10 ? ('0' + dec) : ('' + dec);
+  const intStr = String(inteiro).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return intStr + ',' + decStr + ' m²';
+}
+
+/**
+ * Reforço: se a área total do imóvel não veio, tenta deduzi-la somando as áreas das
+ * frações ideais dos proprietários (ex.: coproprietários com áreas delimitadas).
+ * Só preenche quando há áreas explícitas por proprietário — evita cálculos incorretos.
+ */
+function preencherAreaTotal(analysis) {
+  const imo = analysis.imovel || {};
+  if (!valorVazio(imo.area)) return analysis; // já tem área total
+
+  let somaM2 = 0;
+  (analysis.proprietarios || []).forEach(function(p) {
+    somaM2 += extrairAreaM2(p && p.participacao);
+  });
+
+  if (somaM2 > 0) {
+    imo.area = formatarAreaM2(somaM2) + ' (somado das frações)';
+    analysis.imovel = imo;
+  }
+  return analysis;
+}
+
+// Chaves de identificação de itens das listas (para comparar versões sem duplicar)
+function chaveProprietario(p) { return normalizarChave(p.documento) || normalizarChave(p.nome); }
+function chaveGravame(g) { return normalizarChave(g.registro) + '|' + normalizarChave(g.tipo); }
+function chaveAlerta(a) { return normalizarChave(a.titulo); }
+function chaveCadeia(c) { return normalizarChave(c.registro) || (normalizarChave(c.data) + normalizarChave(c.tipoTransacao)); }
+
+/**
+ * Une itens novos a uma lista existente, sem duplicar (por chave).
+ */
+function unirListas(destino, origem, chaveFn) {
+  destino = Array.isArray(destino) ? destino : [];
+  (origem || []).forEach(function(item) {
+    const k = chaveFn(item);
+    if (k && !destino.some(function(x) { return chaveFn(x) === k; })) destino.push(item);
+  });
+  return destino;
+}
+
+/**
+ * Compara a versão nova de uma matrícula com a versão já existente e retorna a lista
+ * de mudanças detectadas. Como as matrículas são cumulativas (registros e averbações
+ * só são acrescentados), reportamos ADIÇÕES e ALTERAÇÕES de valores — não remoções,
+ * evitando falsos positivos por falha de OCR.
+ */
+function compararAnalises(antiga, nova) {
+  const mud = [];
+  const ia = antiga.imovel || {}, ib = nova.imovel || {};
+  const campos = [
+    ['valor', 'Valor estimado'], ['risco', 'Risco'], ['rating', 'Rating'],
+    ['area', 'Área total'], ['areaConstruida', 'Área construída'], ['endereco', 'Endereço'],
+    ['tipo', 'Tipo do imóvel'], ['cartorio', 'Cartório'], ['comarca', 'Comarca'],
+    ['dataEmissaoCertidao', 'Data de emissão da certidão'], ['cadastroIncra', 'Cadastro INCRA/CCIR']
+  ];
+  campos.forEach(function(c) {
+    const antes = ia[c[0]], depois = ib[c[0]];
+    if (valorVazio(depois)) return; // a nova versão não informou -> ignora
+    if (valorVazio(antes)) {
+      mud.push({ categoria: 'Imóvel', descricao: c[1] + ' informado: "' + depois + '"' });
+    } else if (String(antes).trim() !== String(depois).trim()) {
+      mud.push({ categoria: 'Imóvel', descricao: c[1] + ' alterado: de "' + antes + '" para "' + depois + '"' });
+    }
+  });
+
+  const propsAntigos = antiga.proprietarios || [];
+  (nova.proprietarios || []).forEach(function(p) {
+    const k = chaveProprietario(p);
+    if (k && !propsAntigos.some(function(x) { return chaveProprietario(x) === k; })) {
+      mud.push({ categoria: 'Titularidade', descricao: 'Novo proprietário: ' + (p.nome || '?') + (p.documento ? ' (' + p.documento + ')' : '') });
+    }
+  });
+
+  const gravAntigos = antiga.gravames || [];
+  (nova.gravames || []).forEach(function(g) {
+    const k = chaveGravame(g);
+    if (k && !gravAntigos.some(function(x) { return chaveGravame(x) === k; })) {
+      mud.push({ categoria: 'Gravame', descricao: 'Novo gravame ' + (g.registro || '') + ': ' + (g.tipo || '') + (g.credor ? ' — ' + g.credor : '') });
+    }
+  });
+
+  const cadAntiga = antiga.cadeiaDominial || [];
+  (nova.cadeiaDominial || []).forEach(function(c) {
+    const k = chaveCadeia(c);
+    if (k && !cadAntiga.some(function(x) { return chaveCadeia(x) === k; })) {
+      mud.push({ categoria: 'Cadeia dominial', descricao: 'Novo registro ' + (c.registro || '') + ': ' + (c.tipoTransacao || '') + (c.data ? ' (' + c.data + ')' : '') });
+    }
+  });
+
+  const alAntigos = antiga.alertas || [];
+  (nova.alertas || []).forEach(function(a) {
+    const k = chaveAlerta(a);
+    if (k && !alAntigos.some(function(x) { return chaveAlerta(x) === k; })) {
+      mud.push({ categoria: 'Alerta', descricao: 'Novo alerta: ' + (a.titulo || '') });
+    }
+  });
+
+  return mud;
+}
+
+/**
+ * Reimportação da MESMA matrícula: detecta as mudanças, atualiza o registro para a
+ * versão mais recente (mantendo dados já capturados) e acrescenta uma entrada datada
+ * no histórico de alterações. Se houver mudança relevante, marca o status como ATUALIZADO.
+ */
+function atualizarComHistorico(existente, novo) {
+  const mudancas = compararAnalises(existente, novo);
+
+  // Campos escalares do imóvel -> versão mais recente (mantém o antigo se o novo vier vazio)
   const imoE = existente.imovel || {}, imoN = novo.imovel || {};
   Object.keys(imoN).forEach(function(k) {
     if (k === 'confrontacoes') return;
-    if (valorVazio(imoE[k]) && !valorVazio(imoN[k])) imoE[k] = imoN[k];
+    if (!valorVazio(imoN[k])) imoE[k] = imoN[k];
   });
   imoE.confrontacoes = imoE.confrontacoes || [];
   (imoN.confrontacoes || []).forEach(function(c) {
@@ -530,23 +652,34 @@ function mesclarAnalises(existente, novo) {
   });
   existente.imovel = imoE;
 
-  const addUnicos = function(destino, origem, chaveFn) {
-    destino = destino || [];
-    (origem || []).forEach(function(item) {
-      const k = chaveFn(item);
-      if (k && !destino.some(function(x) { return chaveFn(x) === k; })) destino.push(item);
-    });
-    return destino;
-  };
-  existente.proprietarios = addUnicos(existente.proprietarios, novo.proprietarios, function(p) { return normalizarChave(p.documento) || normalizarChave(p.nome); });
-  existente.gravames = addUnicos(existente.gravames, novo.gravames, function(g) { return normalizarChave(g.registro) + normalizarChave(g.tipo); });
-  existente.alertas = addUnicos(existente.alertas, novo.alertas, function(a) { return normalizarChave(a.titulo); });
-  existente.cadeiaDominial = addUnicos(existente.cadeiaDominial, novo.cadeiaDominial, function(c) { return normalizarChave(c.registro) || (normalizarChave(c.data) + normalizarChave(c.tipoTransacao)); });
+  // Listas: união (nunca perde dados já capturados)
+  existente.proprietarios = unirListas(existente.proprietarios, novo.proprietarios, chaveProprietario);
+  existente.gravames = unirListas(existente.gravames, novo.gravames, chaveGravame);
+  existente.alertas = unirListas(existente.alertas, novo.alertas, chaveAlerta);
+  existente.cadeiaDominial = unirListas(existente.cadeiaDominial, novo.cadeiaDominial, chaveCadeia);
 
-  if (valorVazio(existente.parecerConsolidado) && !valorVazio(novo.parecerConsolidado)) {
-    existente.parecerConsolidado = novo.parecerConsolidado;
+  if (!valorVazio(novo.parecerConsolidado)) existente.parecerConsolidado = novo.parecerConsolidado;
+  if (novo.nomeArquivo) existente.nomeArquivo = novo.nomeArquivo;
+  if (novo.metodo) existente.metodo = novo.metodo;
+
+  preencherAreaTotal(existente);
+
+  // Histórico datado (mais recente primeiro)
+  existente.historico = Array.isArray(existente.historico) ? existente.historico : [];
+  const agoraISO = new Date().toISOString();
+  existente.historico.unshift({
+    data: agoraISO,
+    dataCertidao: (novo.imovel && novo.imovel.dataEmissaoCertidao) || '',
+    arquivo: novo.nomeArquivo || '',
+    mudancas: mudancas
+  });
+  existente.atualizadoEm = agoraISO;
+
+  // Marca como ATUALIZADO quando houve mudança relevante
+  if (mudancas.length > 0) {
+    existente.status = 'ATUALIZADO';
   }
-  existente.timestamp = novo.timestamp || existente.timestamp;
+
   return existente;
 }
 
@@ -565,16 +698,25 @@ function autoExportar(id) {
  * informações novas ao registro existente. Retorna o objeto efetivamente salvo.
  */
 function registrarOuMesclar(finalResult) {
+  preencherAreaTotal(finalResult); // deduz a área total se não veio da IA
   const list = listarAnalises();
   for (let i = 0; i < list.length; i++) {
     if (list[i] && mesmaMatricula(list[i], finalResult)) {
-      const merged = mesclarAnalises(list[i], finalResult);
-      list[i] = merged;
+      // Reimportação: detecta mudanças, atualiza e registra no histórico
+      const atualizado = atualizarComHistorico(list[i], finalResult);
+      list[i] = atualizado;
       salvarBancoLocal(list);
-      autoExportar(merged.id);
-      return merged;
+      autoExportar(atualizado.id);
+      return atualizado;
     }
   }
+  // Primeira importação desta matrícula
+  finalResult.historico = [{
+    data: new Date().toISOString(),
+    dataCertidao: (finalResult.imovel && finalResult.imovel.dataEmissaoCertidao) || '',
+    arquivo: finalResult.nomeArquivo || '',
+    mudancas: [{ categoria: 'Cadastro', descricao: 'Primeira importação da matrícula.' }]
+  }];
   list.unshift(finalResult);
   salvarBancoLocal(list);
   autoExportar(finalResult.id);
@@ -591,169 +733,9 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
   
   const apiKeys = getGeminiApiKeys();
 
-  // Caso de Fallback Inteligente (Se nenhuma chave de API configurada no Apps Script)
+  // É obrigatório ter ao menos uma chave de API do Gemini configurada.
   if (apiKeys.length === 0) {
-    Utilities.sleep(1500); // Simula o tempo de análise
-    
-    const containsRural = (textInput && textInput.toLowerCase().indexOf("rural") > -1) || (name && name.toLowerCase().indexOf("rural") > -1) || (textInput && textInput.toLowerCase().indexOf("fazenda") > -1);
-    const containsUrbano = (textInput && textInput.toLowerCase().indexOf("apartamento") > -1) || (textInput && textInput.toLowerCase().indexOf("urbano") > -1) || (textInput && textInput.toLowerCase().indexOf("centro") > -1);
-    const containsPenhora = textInput && (textInput.toLowerCase().indexOf("penhora") > -1 || textInput.toLowerCase().indexOf("processo") > -1 || textInput.toLowerCase().indexOf("trabalhista") > -1);
-    
-    let simResult;
-    
-    if (containsRural) {
-      simResult = {
-        imovel: {
-          matricula: "14.880",
-          comarca: "Sorriso - MT",
-          valor: "R$ 15.400.000,00",
-          risco: "2.1/10",
-          rating: "AA",
-          endereco: "Rodovia BR-163, KM 720, Área Rural, Sorriso - MT",
-          area: "420 hectares (Gleba Cedro)",
-          descricaoCurta: "Imóvel rural plano, com 82% de área mecanizável para grãos. Regularizado junto ao INCRA, CCIR e Georreferenciamento homologado."
-        },
-        proprietarios: [
-          {
-            nome: "Egon Schultz",
-            documento: "444.555.666-12",
-            participacao: "100%",
-            status: "REGULAR"
-          }
-        ],
-        alertas: [
-          {
-            titulo: "CAR Ativo e Regularizado",
-            descricao: "Cadastro Ambiental Rural validado pela Secretaria de Meio Ambiente do Estado, com reserva legal preservada de 20%.",
-            tipo: "INFORMAÇÃO"
-          },
-          {
-            titulo: "Arrendamento Agrícola Parcial",
-            descricao: "Contrato de arrendamento de 150 hectares registrado para cultivo de algodão com vigência até Junho de 2027.",
-            tipo: "ATENÇÃO"
-          }
-        ],
-        cadeiaDominial: [
-          {
-            data: "14/03/2012",
-            tipoTransacao: "Escritura de Compra e Venda",
-            adquirente: "Egon Schultz",
-            transmitente: "Espólio de Walter Schultz",
-            registro: "R-4/14.880",
-            detalhes: "Partilha amigável pós inventário do titular original."
-          }
-        ],
-        parecerConsolidado: "A fazenda apresenta ótima capacidade produtiva e logística. Toda a cadeia possessória nos últimos 10 anos está consolidada sem litígios. O imóvel é plenamente elegível para garantia real Cresol por alienação fiduciária em garantia rural. Recomenda-se apenas a averbação do termo de ciência do contrato de arrendamento agrícola na formalização da operação.",
-        status: "LIBERADO"
-      };
-    } else if (containsPenhora || containsUrbano) {
-      simResult = {
-        imovel: {
-          matricula: "22.315",
-          comarca: "Porto Alegre - RS",
-          valor: "R$ 1.150.000,00",
-          risco: "8.2/10",
-          rating: "C",
-          endereco: "Rua Gonçalo de Carvalho, 320, Apto 402, Moinhos de Vento, Porto Alegre - RS",
-          area: "145 m²",
-          descricaoCurta: "Apartamento residencial de luxo com 3 dormitórios, duas vagas de garagem privativas, localizado em região nobre com alto potencial de liquidez."
-        },
-        proprietarios: [
-          {
-            nome: "Julio Cesar Brandão",
-            documento: "777.888.999-11",
-            participacao: "50%",
-            status: "ATENÇÃO"
-          },
-          {
-            nome: "Marta Helena Brandão",
-            documento: "888.999.000-22",
-            participacao: "50%",
-            status: "REGULAR"
-          }
-        ],
-        alertas: [
-          {
-            titulo: "Penhora Judicial Registrada (AV-9)",
-            descricao: "Penhora decorrente de Execução de Título Extrajudicial promovida pelo Condomínio do Edifício Residencial na comarca de Porto Alegre no valor de R$ 94.000,00.",
-            tipo: "CRÍTICO"
-          },
-          {
-            titulo: "Execução Fiscal da União",
-            descricao: "Averbação AV-11 de distribuição de execução fiscal federal contra o co-proprietário Julio Cesar Brandão no valor consolidado de R$ 420.000,00.",
-            tipo: "CRÍTICO"
-          }
-        ],
-        cadeiaDominial: [
-          {
-            data: "18/02/2015",
-            tipoTransacao: "Adjudicação por Herança",
-            adquirente: "Julio Cesar Brandão e Marta Helena Brandão",
-            transmitente: "Sucessores de Orlando Brandão",
-            registro: "R-7/22.315",
-            detalhes: "Partilha homologada judicialmente pela 3ª Vara de Família."
-          }
-        ],
-        parecerConsolidado: "Garantia jurídica de alto risco. O imóvel possui excelente liquidez de mercado, contudo, as averbações de penhora e distribuição de execução fiscal representam grave ameaça à garantia fiduciária ou hipotecária da cooperativa Cresol. Uma eventual adjudicação forçada por terceiros credores prejudicaria nossa preferência. Operação REJEITADA como garantia até que se prove a baixa judicial das referidas averbações na matrícula.",
-        status: "REJEITADO"
-      };
-    } else {
-      simResult = {
-        imovel: {
-          matricula: "41.902",
-          comarca: "Londrina - PR",
-          valor: "R$ 3.800.000,00",
-          risco: "3.4/10",
-          rating: "A-",
-          endereco: "Avenida Higienópolis, 1200, Centro, Londrina - PR",
-          area: "840 m²",
-          descricaoCurta: "Sala comercial ampla ocupada por consultórios, edificada em condomínio de salas comerciais."
-        },
-        proprietarios: [
-          {
-            nome: "Clínica Médica LonMed Ltda",
-            documento: "12.345.678/0001-90",
-            participacao: "100%",
-            status: "REGULAR"
-          }
-        ],
-        alertas: [
-          {
-            titulo: "Averbação Premonitória Registrada",
-            descricao: "Constatação de ação de cobrança movida por fornecedor local contra a proprietária, pendente de julgamento no valor de R$ 45.000,00.",
-            tipo: "ATENÇÃO"
-          }
-        ],
-        cadeiaDominial: [
-          {
-            data: "15/07/2018",
-            tipoTransacao: "Compra e Venda",
-            adquirente: "Clínica Médica LonMed Ltda",
-            transmitente: "Imobiliária Londrina S.A.",
-            registro: "R-3/41.902",
-            detalhes: "Imóvel livre de ônus adquirido à vista."
-          }
-        ],
-        parecerConsolidado: "O imóvel comercial ostenta boa situação cadastral e alta liquidez regional. A averbação premonitória possui valor diminuto frente ao valor de avaliação do bem (menos de 2%), não inviabilizando de forma categórica a aceitação da garantia pela Cresol. Recomenda-se aprovação condicionada à retenção de margem de segurança na operação ou substituição fidejussória dos sócios.",
-        status: "EM REVISÃO"
-      };
-    }
-    
-    const finalResult = {
-      id: uniqueId,
-      timestamp: new Date().toISOString(),
-      nomeArquivo: name,
-      metodo: selectedMetodo,
-      imovel: simResult.imovel,
-      proprietarios: simResult.proprietarios,
-      alertas: simResult.alertas,
-      cadeiaDominial: simResult.cadeiaDominial,
-      parecerConsolidado: simResult.parecerConsolidado,
-      status: simResult.status
-    };
-    
-    // Salva (ou mescla, se a matrícula já existir) no banco persistente do script
-    return registrarOuMesclar(finalResult);
+    throw new Error("Nenhuma chave de API do Gemini configurada. Cadastre ao menos uma chave em Configurações para processar matrículas.");
   }
   
   // Caso de Chave(s) API ativa(s): Chamada Real ao Gemini API via UrlFetchApp
@@ -764,7 +746,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "Você é o Analista Sênior de Registros Públicos e Direito Imobiliário da cooperativa Cresol. Sua missão de alta responsabilidade é examinar detalhadamente matrículas de imóveis, interpretando a linguagem técnica registral e notarial, rastreando a cadeia dominial (proprietários anteriores e atuais) com suas participações, e identificando rigorosamente restrições de crédito e gravames (penhoras, alienações fiduciárias ativas ou baixadas, indisponibilidades de bens, hipotecas, servidões, usufrutos, arresto, arrolamento). Ao final, classifique o risco fiduciário do bem como garantia (de AAA+ a D) e consolide um parecer técnico de elegibilidade jurídica para crédito.\n\n" +
       "METODOLOGIA DE VALIDAÇÃO CRUZADA (aplique internamente antes de responder):\n" +
       "1. Extração registral: transcreva Matrícula, Ofício/Cartório e Comarca, tipo do imóvel (urbano/rural/gleba), endereço/localização, área total e área construída, Cadastro INCRA/CCIR quando rural, e a data/hora de emissão da certidão.\n" +
-      "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta.\n" +
+      "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta. IMPORTANTE: a área total NUNCA deve ficar vazia — se o documento não trouxer o total de forma explícita, calcule-o somando as áreas das frações dos proprietários (imóvel de marido e esposa/coproprietários = 100% da área) e preencha o campo 'area'.\n" +
       "3. Qualificação subjetiva: identifique todos os proprietários/fiduciantes com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
       "4. Ônus e gravames: liste cada gravame ativo com o registro (R-/AV-), o tipo, o credor/beneficiário e observação/vencimento. Se estiver livre e desembaraçado, declare isso explicitamente.\n" +
       "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n\n" +
@@ -784,7 +766,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    \"risco\": \"string (Ex: 3.5/10)\",\n" +
                  "    \"rating\": \"string (AAA+ a D)\",\n" +
                  "    \"endereco\": \"string\",\n" +
-                 "    \"area\": \"string (área total do terreno)\",\n" +
+                 "    \"area\": \"string (área TOTAL do terreno/imóvel = 100%; se não houver total explícito, some as áreas das frações dos proprietários. Nunca deixe vazio)\",\n" +
                  "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
                  "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
                  "    \"descricaoLegal\": \"string (descritivo legal completo e atualizado, pronto para contrato)\",\n" +
@@ -959,110 +941,4 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
   } catch (err) {
     throw new Error("Falha ao se comunicar com o cérebro da Inteligência Artificial: " + err.toString());
   }
-}
-
-/**
- * Dados de simulação iniciais para preencher o sistema
- */
-function obterAnalisesPadrao() {
-  return [
-    {
-      id: "CRT-8821",
-      timestamp: "2026-06-25T14:30:00.000Z",
-      nomeArquivo: "Matricula_Lakeside_Plaza.pdf",
-      status: "LIBERADO",
-      metodo: "Especialista Imobiliário v4",
-      imovel: {
-        matricula: "34.512",
-        comarca: "Cascavel - PR",
-        valor: "R$ 4.250.000,00",
-        risco: "1.2/10",
-        rating: "AAA+",
-        endereco: "Avenida Brasil, 4550, Centro, Cascavel - PR",
-        area: "1.250 m²",
-        descricaoCurta: "Terreno urbano comercial de formato regular contendo edificação em alvenaria com 850 m² de área construída, destinado a comércio."
-      },
-      proprietarios: [
-        {
-          nome: "Carlos Alberto Santos",
-          documento: "123.456.789-00",
-          participacao: "60%",
-          status: "REGULAR"
-        },
-        {
-          nome: "Investimentos Imobiliários Cresol S.A.",
-          documento: "00.123.456/0001-99",
-          participacao: "40%",
-          status: "REGULAR"
-        }
-      ],
-      alertas: [
-        {
-          titulo: "Alienação Fiduciária em Vigor",
-          descricao: "Averbação R-4 aponta alienação fiduciária em favor do Banco Central, porém já em fase de termo de quitação registrado na AV-5. Garantia livre.",
-          tipo: "INFORMAÇÃO"
-        }
-      ],
-      cadeiaDominial: [
-        {
-          data: "12/05/2019",
-          tipoTransacao: "Compra e Venda",
-          adquirente: "Carlos Alberto Santos",
-          transmitente: "Empreendimentos Alfa Ltda",
-          registro: "R-3/34.512",
-          detalhes: "Adquirido pelo valor histórico de R$ 2.800.000,00 por escritura pública de compra e venda."
-        }
-      ],
-      parecerConsolidado: "O imóvel apresenta excelente liquidez e solidez documental. O terreno está localizado em área comercial valorizada na comarca de Cascavel. A fração ideal de 100% encontra-se livre de gravames impeditivos, estando em nome de proponentes com ficha cadastral regular perante a Cresol. O imóvel possui plena capacidade para ser constituído como garantia real fiduciária para operações de crédito de grande porte."
-    },
-    {
-      id: "CRT-8822",
-      timestamp: "2026-06-30T09:15:00.000Z",
-      nomeArquivo: "Matricula_Mountain_View.pdf",
-      status: "EM REVISÃO",
-      metodo: "Especialista Imobiliário v4",
-      imovel: {
-        matricula: "18.244",
-        comarca: "Chapecó - SC",
-        valor: "R$ 12.800.000,00",
-        risco: "6.8/10",
-        rating: "B",
-        endereco: "Marginal BR-282, KM 540, Distrito Industrial, Chapecó - SC",
-        area: "4.5 hectares (45.000 m²)",
-        descricaoCurta: "Imóvel industrial constituído por galpão com estrutura metálica de 12.000 m², estacionamento, guarita e subestação de energia própria."
-      },
-      proprietarios: [
-        {
-          nome: "Industrial Holdings S.A.",
-          documento: "11.222.333/0001-44",
-          participacao: "100%",
-          status: "ATENÇÃO"
-        }
-      ],
-      alertas: [
-        {
-          titulo: "Processo Trabalhista Detectado",
-          descricao: "Ação 0012345-67.2023.5.04.0001 tramitando na 2ª Vara do Trabalho de Chapecó com valor de causa superior a R$ 6.000.000,00.",
-          tipo: "CRÍTICO"
-        },
-        {
-          titulo: "Indisponibilidade de Bens (AV-8)",
-          descricao: "Averbação de indisponibilidade decretada por ordem do Juízo Federal da 1ª Vara Cível de Curitiba em Jan/2024. Impede alienação fiduciária imediata.",
-          tipo: "CRÍTICO"
-        }
-      ],
-      cadeiaDominial: [
-        {
-          data: "10/11/2010",
-          tipoTransacao: "Compra e Venda",
-          adquirente: "José Carlos de Oliveira",
-          transmitente: "Siderúrgica Catarinense S.A.",
-          registro: "R-5/18.244",
-          detalhes: "Aquisição para fins de expansão metalúrgica local."
-        }
-      ],
-      parecerConsolidado: "Recomenda-se cautela extrema. O imóvel possui alto valor de mercado e excelente infraestrutura física, contudo, as restrições jurídicas averbadas representam grave risco para a cooperativa. A averbação de indisponibilidade de bens (AV-8) bloqueia preventivamente qualquer transferência de propriedade ou constituição de novos gravames de garantia. A operação de crédito deve permanecer sob REVISÃO até que seja apresentado termo de cancelamento da indisponibilidade judicial ou outorgada garantia complementar.",
-      status: "EM REVISÃO"
-    }
-  ];
 }
