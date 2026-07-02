@@ -552,15 +552,97 @@ function preencherAreaTotal(analysis) {
   return analysis;
 }
 
+// Chaves de identificação de itens das listas (para comparar versões sem duplicar)
+function chaveProprietario(p) { return normalizarChave(p.documento) || normalizarChave(p.nome); }
+function chaveGravame(g) { return normalizarChave(g.registro) + '|' + normalizarChave(g.tipo); }
+function chaveAlerta(a) { return normalizarChave(a.titulo); }
+function chaveCadeia(c) { return normalizarChave(c.registro) || (normalizarChave(c.data) + normalizarChave(c.tipoTransacao)); }
+
 /**
- * Mescla uma nova análise em uma existente da MESMA matrícula:
- * preenche campos vazios e acrescenta apenas itens novos das listas (sem duplicar).
+ * Une itens novos a uma lista existente, sem duplicar (por chave).
  */
-function mesclarAnalises(existente, novo) {
+function unirListas(destino, origem, chaveFn) {
+  destino = Array.isArray(destino) ? destino : [];
+  (origem || []).forEach(function(item) {
+    const k = chaveFn(item);
+    if (k && !destino.some(function(x) { return chaveFn(x) === k; })) destino.push(item);
+  });
+  return destino;
+}
+
+/**
+ * Compara a versão nova de uma matrícula com a versão já existente e retorna a lista
+ * de mudanças detectadas. Como as matrículas são cumulativas (registros e averbações
+ * só são acrescentados), reportamos ADIÇÕES e ALTERAÇÕES de valores — não remoções,
+ * evitando falsos positivos por falha de OCR.
+ */
+function compararAnalises(antiga, nova) {
+  const mud = [];
+  const ia = antiga.imovel || {}, ib = nova.imovel || {};
+  const campos = [
+    ['valor', 'Valor estimado'], ['risco', 'Risco'], ['rating', 'Rating'],
+    ['area', 'Área total'], ['areaConstruida', 'Área construída'], ['endereco', 'Endereço'],
+    ['tipo', 'Tipo do imóvel'], ['cartorio', 'Cartório'], ['comarca', 'Comarca'],
+    ['dataEmissaoCertidao', 'Data de emissão da certidão'], ['cadastroIncra', 'Cadastro INCRA/CCIR']
+  ];
+  campos.forEach(function(c) {
+    const antes = ia[c[0]], depois = ib[c[0]];
+    if (valorVazio(depois)) return; // a nova versão não informou -> ignora
+    if (valorVazio(antes)) {
+      mud.push({ categoria: 'Imóvel', descricao: c[1] + ' informado: "' + depois + '"' });
+    } else if (String(antes).trim() !== String(depois).trim()) {
+      mud.push({ categoria: 'Imóvel', descricao: c[1] + ' alterado: de "' + antes + '" para "' + depois + '"' });
+    }
+  });
+
+  const propsAntigos = antiga.proprietarios || [];
+  (nova.proprietarios || []).forEach(function(p) {
+    const k = chaveProprietario(p);
+    if (k && !propsAntigos.some(function(x) { return chaveProprietario(x) === k; })) {
+      mud.push({ categoria: 'Titularidade', descricao: 'Novo proprietário: ' + (p.nome || '?') + (p.documento ? ' (' + p.documento + ')' : '') });
+    }
+  });
+
+  const gravAntigos = antiga.gravames || [];
+  (nova.gravames || []).forEach(function(g) {
+    const k = chaveGravame(g);
+    if (k && !gravAntigos.some(function(x) { return chaveGravame(x) === k; })) {
+      mud.push({ categoria: 'Gravame', descricao: 'Novo gravame ' + (g.registro || '') + ': ' + (g.tipo || '') + (g.credor ? ' — ' + g.credor : '') });
+    }
+  });
+
+  const cadAntiga = antiga.cadeiaDominial || [];
+  (nova.cadeiaDominial || []).forEach(function(c) {
+    const k = chaveCadeia(c);
+    if (k && !cadAntiga.some(function(x) { return chaveCadeia(x) === k; })) {
+      mud.push({ categoria: 'Cadeia dominial', descricao: 'Novo registro ' + (c.registro || '') + ': ' + (c.tipoTransacao || '') + (c.data ? ' (' + c.data + ')' : '') });
+    }
+  });
+
+  const alAntigos = antiga.alertas || [];
+  (nova.alertas || []).forEach(function(a) {
+    const k = chaveAlerta(a);
+    if (k && !alAntigos.some(function(x) { return chaveAlerta(x) === k; })) {
+      mud.push({ categoria: 'Alerta', descricao: 'Novo alerta: ' + (a.titulo || '') });
+    }
+  });
+
+  return mud;
+}
+
+/**
+ * Reimportação da MESMA matrícula: detecta as mudanças, atualiza o registro para a
+ * versão mais recente (mantendo dados já capturados) e acrescenta uma entrada datada
+ * no histórico de alterações. Se houver mudança relevante, marca o status como ATUALIZADO.
+ */
+function atualizarComHistorico(existente, novo) {
+  const mudancas = compararAnalises(existente, novo);
+
+  // Campos escalares do imóvel -> versão mais recente (mantém o antigo se o novo vier vazio)
   const imoE = existente.imovel || {}, imoN = novo.imovel || {};
   Object.keys(imoN).forEach(function(k) {
     if (k === 'confrontacoes') return;
-    if (valorVazio(imoE[k]) && !valorVazio(imoN[k])) imoE[k] = imoN[k];
+    if (!valorVazio(imoN[k])) imoE[k] = imoN[k];
   });
   imoE.confrontacoes = imoE.confrontacoes || [];
   (imoN.confrontacoes || []).forEach(function(c) {
@@ -570,23 +652,34 @@ function mesclarAnalises(existente, novo) {
   });
   existente.imovel = imoE;
 
-  const addUnicos = function(destino, origem, chaveFn) {
-    destino = destino || [];
-    (origem || []).forEach(function(item) {
-      const k = chaveFn(item);
-      if (k && !destino.some(function(x) { return chaveFn(x) === k; })) destino.push(item);
-    });
-    return destino;
-  };
-  existente.proprietarios = addUnicos(existente.proprietarios, novo.proprietarios, function(p) { return normalizarChave(p.documento) || normalizarChave(p.nome); });
-  existente.gravames = addUnicos(existente.gravames, novo.gravames, function(g) { return normalizarChave(g.registro) + normalizarChave(g.tipo); });
-  existente.alertas = addUnicos(existente.alertas, novo.alertas, function(a) { return normalizarChave(a.titulo); });
-  existente.cadeiaDominial = addUnicos(existente.cadeiaDominial, novo.cadeiaDominial, function(c) { return normalizarChave(c.registro) || (normalizarChave(c.data) + normalizarChave(c.tipoTransacao)); });
+  // Listas: união (nunca perde dados já capturados)
+  existente.proprietarios = unirListas(existente.proprietarios, novo.proprietarios, chaveProprietario);
+  existente.gravames = unirListas(existente.gravames, novo.gravames, chaveGravame);
+  existente.alertas = unirListas(existente.alertas, novo.alertas, chaveAlerta);
+  existente.cadeiaDominial = unirListas(existente.cadeiaDominial, novo.cadeiaDominial, chaveCadeia);
 
-  if (valorVazio(existente.parecerConsolidado) && !valorVazio(novo.parecerConsolidado)) {
-    existente.parecerConsolidado = novo.parecerConsolidado;
+  if (!valorVazio(novo.parecerConsolidado)) existente.parecerConsolidado = novo.parecerConsolidado;
+  if (novo.nomeArquivo) existente.nomeArquivo = novo.nomeArquivo;
+  if (novo.metodo) existente.metodo = novo.metodo;
+
+  preencherAreaTotal(existente);
+
+  // Histórico datado (mais recente primeiro)
+  existente.historico = Array.isArray(existente.historico) ? existente.historico : [];
+  const agoraISO = new Date().toISOString();
+  existente.historico.unshift({
+    data: agoraISO,
+    dataCertidao: (novo.imovel && novo.imovel.dataEmissaoCertidao) || '',
+    arquivo: novo.nomeArquivo || '',
+    mudancas: mudancas
+  });
+  existente.atualizadoEm = agoraISO;
+
+  // Marca como ATUALIZADO quando houve mudança relevante
+  if (mudancas.length > 0) {
+    existente.status = 'ATUALIZADO';
   }
-  existente.timestamp = novo.timestamp || existente.timestamp;
+
   return existente;
 }
 
@@ -609,14 +702,21 @@ function registrarOuMesclar(finalResult) {
   const list = listarAnalises();
   for (let i = 0; i < list.length; i++) {
     if (list[i] && mesmaMatricula(list[i], finalResult)) {
-      const merged = mesclarAnalises(list[i], finalResult);
-      preencherAreaTotal(merged); // após mesclar frações, tenta completar o total
-      list[i] = merged;
+      // Reimportação: detecta mudanças, atualiza e registra no histórico
+      const atualizado = atualizarComHistorico(list[i], finalResult);
+      list[i] = atualizado;
       salvarBancoLocal(list);
-      autoExportar(merged.id);
-      return merged;
+      autoExportar(atualizado.id);
+      return atualizado;
     }
   }
+  // Primeira importação desta matrícula
+  finalResult.historico = [{
+    data: new Date().toISOString(),
+    dataCertidao: (finalResult.imovel && finalResult.imovel.dataEmissaoCertidao) || '',
+    arquivo: finalResult.nomeArquivo || '',
+    mudancas: [{ categoria: 'Cadastro', descricao: 'Primeira importação da matrícula.' }]
+  }];
   list.unshift(finalResult);
   salvarBancoLocal(list);
   autoExportar(finalResult.id);

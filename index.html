@@ -237,6 +237,7 @@
                 <option value="TODOS">Todos os Status</option>
                 <option value="LIBERADO">Liberado</option>
                 <option value="VALIDADO">Validado</option>
+                <option value="ATUALIZADO">Atualizado</option>
                 <option value="EM REVISÃO">Em Revisão</option>
                 <option value="REJEITADO">Rejeitado</option>
               </select>
@@ -427,6 +428,10 @@
             <button id="tab-btn-parecer" onclick="switchAnalysisTab('parecer')" class="px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark">
               Parecer Consolidado
             </button>
+            <button id="tab-btn-historico" onclick="switchAnalysisTab('historico')" class="px-6 py-4 text-xs font-bold border-b-2 border-transparent text-text-gray hover:text-text-dark flex items-center gap-1.5">
+              <span>Histórico de Alterações</span>
+              <span id="historico-badge-count" class="bg-purple-500 text-white text-[9px] px-1.5 py-0.2 rounded font-black">0</span>
+            </button>
           </div>
 
           <div class="p-6">
@@ -602,6 +607,18 @@
               </div>
               <div class="p-6 bg-primary-green/5 border border-primary-green/10 rounded-lg">
                 <p id="info-parecer" data-path="parecerConsolidado" class="editable-field text-sm text-text-dark leading-relaxed whitespace-pre-line"></p>
+              </div>
+            </div>
+
+            <!-- Tab Contents: Historico de Alteracoes -->
+            <div id="tab-content-historico" class="hidden space-y-4">
+              <h4 class="font-bold text-sm text-primary-green uppercase mb-3 flex items-center gap-2">
+                <i data-lucide="history" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Linha do Tempo das Reimportações
+              </h4>
+              <p class="text-xs text-text-gray -mt-2">Cada reimportação desta matrícula registra abaixo o que mudou em relação à versão anterior.</p>
+              <div id="detail-historico-list" class="space-y-3">
+                <!-- Dinâmico -->
               </div>
             </div>
 
@@ -883,6 +900,7 @@
     function statusBadgeClass(status) {
       if (status === 'LIBERADO') return 'bg-success-green/10 text-success-green border border-success-green/20';
       if (status === 'VALIDADO') return 'bg-info-blue/10 text-info-blue border border-info-blue/20';
+      if (status === 'ATUALIZADO') return 'bg-purple-500/10 text-purple-600 border border-purple-500/20';
       if (status === 'EM REVISÃO') return 'bg-accent-orange/10 text-accent-orange border border-accent-orange/20';
       return 'bg-danger-red/10 text-danger-red border border-danger-red/20';
     }
@@ -1104,6 +1122,44 @@
       // Tab: Parecer
       document.getElementById('info-parecer').innerText = item.parecerConsolidado || "Aguardando geração do parecer do analista Cresol.";
 
+      // Tab: Histórico de Alterações
+      const histList = document.getElementById('detail-historico-list');
+      const historico = Array.isArray(item.historico) ? item.historico : [];
+      document.getElementById('historico-badge-count').innerText = historico.length;
+      histList.innerHTML = '';
+      if (historico.length > 0) {
+        historico.forEach((h, idx) => {
+          let dataFmt = '—';
+          try { dataFmt = h.data ? new Date(h.data).toLocaleString('pt-BR') : '—'; } catch (e) { dataFmt = String(h.data || '—'); }
+          const isPrimeira = idx === historico.length - 1;
+          const mudancas = Array.isArray(h.mudancas) ? h.mudancas : [];
+          let corpo;
+          if (mudancas.length === 0) {
+            corpo = `<p class="text-xs text-text-gray italic">Reimportado sem alterações em relação à versão anterior.</p>`;
+          } else {
+            corpo = '<ul class="space-y-1.5 mt-2">' + mudancas.map(m => `
+              <li class="text-xs text-text-dark flex items-start gap-2">
+                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-bg-body border border-border-gray text-text-gray whitespace-nowrap mt-0.5">${esc(m.categoria || '—')}</span>
+                <span>${esc(m.descricao || '')}</span>
+              </li>`).join('') + '</ul>';
+          }
+          histList.innerHTML += `
+            <div class="p-4 rounded-lg border ${isPrimeira ? 'border-primary-green/20 bg-primary-green/5' : 'border-purple-500/20 bg-purple-500/5'}">
+              <div class="flex flex-wrap justify-between items-center gap-2">
+                <span class="font-bold text-sm text-text-dark flex items-center gap-2">
+                  <i data-lucide="${isPrimeira ? 'flag' : 'refresh-cw'}" class="w-4 h-4 ${isPrimeira ? 'text-primary-green' : 'text-purple-600'}"></i>
+                  ${isPrimeira ? 'Importação inicial' : 'Reimportação'}
+                </span>
+                <span class="text-[11px] text-text-gray">${dataFmt}${h.dataCertidao ? ' • Certidão: ' + esc(h.dataCertidao) : ''}</span>
+              </div>
+              ${h.arquivo ? `<p class="text-[10px] text-text-gray mt-0.5">Arquivo: ${esc(h.arquivo)}</p>` : ''}
+              ${corpo}
+            </div>`;
+        });
+      } else {
+        histList.innerHTML = `<p class="text-xs text-text-gray">Sem histórico de reimportações. Ao reimportar esta matrícula, as alterações aparecerão aqui.</p>`;
+      }
+
       switchView('analise');
       switchAnalysisTab('proprietarios');
     }
@@ -1111,7 +1167,7 @@
     // Switch inside tabs of detailed analysis
     function switchAnalysisTab(tabId) {
       activeAnalysisTab = tabId;
-      const tabs = ['proprietarios', 'imovel', 'alertas', 'parecer'];
+      const tabs = ['proprietarios', 'imovel', 'alertas', 'parecer', 'historico'];
       tabs.forEach(id => {
         const btn = document.getElementById('tab-btn-' + id);
         const content = document.getElementById('tab-content-' + id);
