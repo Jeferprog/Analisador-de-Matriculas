@@ -8,6 +8,12 @@
 const PROP_API_KEY = 'GEMINI_API_KEY';
 const PROP_CONFIG = 'CRESOL_CONFIG_JSON';
 
+// Custo: modelo e preços do Gemini (USD por 1M de tokens) + câmbio de fallback
+const GEMINI_MODEL_NAME = 'gemini-2.5-flash';
+const PRECO_INPUT_USD_1M = 0.30;   // US$ / 1M tokens de entrada
+const PRECO_OUTPUT_USD_1M = 2.50;  // US$ / 1M tokens de saída (inclui tokens de raciocínio)
+const CAMBIO_FALLBACK = 5.40;      // usado se a cotação ao vivo falhar
+
 /**
  * Renderiza a interface do usuário (Single Page Application)
  */
@@ -139,10 +145,10 @@ function inicializarPlanilha(url, abaPrincipalName, abaAlertasName) {
     sheetPrincipal.appendRow([
       'Lote ID', 'Data e Hora', 'Arquivo', 'Comarca', 'Nº Matrícula',
       'Área', 'Endereço', 'Valor Estimado', 'Risco Geral', 'Rating',
-      'Proprietários', 'Status de Liberação', 'Parecer Consolidado', 'Dados Completos (JSON)'
+      'Proprietários', 'Status de Liberação', 'Parecer Consolidado', 'Dados Completos (JSON)', 'Custo Total (R$)'
     ]);
     // Formatação do Cabeçalho (Verde Cresol institucional)
-    const headerRange = sheetPrincipal.getRange(1, 1, 1, 14);
+    const headerRange = sheetPrincipal.getRange(1, 1, 1, 15);
     headerRange.setBackground('#005c46')
                .setFontColor('#ffffff')
                .setFontWeight('bold')
@@ -423,7 +429,8 @@ function exportarParaSheets(analysisId) {
       JSON.stringify(target.proprietarios),
       target.status,
       target.parecerConsolidado,
-      JSON.stringify(target) // Dados completos para round-trip sem perda (confrontações, gravames, descrição legal, etc.)
+      JSON.stringify(target), // Dados completos para round-trip sem perda (confrontações, gravames, descrição legal, etc.)
+      (typeof target.custoTotalBRL === 'number' ? Math.round(target.custoTotalBRL * 10000) / 10000 : '') // Custo Total (R$)
     ];
 
     if (rowIndexToUpdate > -1) {
@@ -664,6 +671,11 @@ function atualizarComHistorico(existente, novo) {
 
   preencherAreaTotal(existente);
 
+  // Custo: acumula o gasto desta reimportação ao total da matrícula
+  const custoNovoBRL = (novo.custo && novo.custo.brl) || 0;
+  existente.custoTotalBRL = (existente.custoTotalBRL || 0) + custoNovoBRL;
+  if (novo.custo) existente.custo = novo.custo; // custo do último processamento
+
   // Histórico datado (mais recente primeiro)
   existente.historico = Array.isArray(existente.historico) ? existente.historico : [];
   const agoraISO = new Date().toISOString();
@@ -671,7 +683,8 @@ function atualizarComHistorico(existente, novo) {
     data: agoraISO,
     dataCertidao: (novo.imovel && novo.imovel.dataEmissaoCertidao) || '',
     arquivo: novo.nomeArquivo || '',
-    mudancas: mudancas
+    mudancas: mudancas,
+    custo: novo.custo || null
   });
   existente.atualizadoEm = agoraISO;
 
@@ -711,16 +724,76 @@ function registrarOuMesclar(finalResult) {
     }
   }
   // Primeira importação desta matrícula
+  const custoInicial = (finalResult.custo && finalResult.custo.brl) || 0;
+  finalResult.custoTotalBRL = custoInicial;
   finalResult.historico = [{
     data: new Date().toISOString(),
     dataCertidao: (finalResult.imovel && finalResult.imovel.dataEmissaoCertidao) || '',
     arquivo: finalResult.nomeArquivo || '',
-    mudancas: [{ categoria: 'Cadastro', descricao: 'Primeira importação da matrícula.' }]
+    mudancas: [{ categoria: 'Cadastro', descricao: 'Primeira importação da matrícula.' }],
+    custo: finalResult.custo || null
   }];
   list.unshift(finalResult);
   salvarBancoLocal(list);
   autoExportar(finalResult.id);
   return finalResult;
+}
+
+/**
+ * Cotação USD->BRL ao vivo (AwesomeAPI), com cache de 12h e fallback.
+ */
+function obterCambioUsdBrl() {
+  const props = PropertiesService.getScriptProperties();
+  const cacheRaw = props.getProperty('CRESOL_CAMBIO');
+  if (cacheRaw) {
+    try {
+      const c = JSON.parse(cacheRaw);
+      if (c && c.valor && c.em && (Date.now() - c.em) < 12 * 3600 * 1000) return c.valor;
+    } catch (e) { /* ignora */ }
+  }
+  try {
+    const resp = UrlFetchApp.fetch('https://economia.awesomeapi.com.br/last/USD-BRL', { muteHttpExceptions: true });
+    if (resp.getResponseCode() === 200) {
+      const data = JSON.parse(resp.getContentText());
+      const bid = data && data.USDBRL && parseFloat(data.USDBRL.bid);
+      if (bid && bid > 0) {
+        props.setProperty('CRESOL_CAMBIO', JSON.stringify({ valor: bid, em: Date.now() }));
+        return bid;
+      }
+    }
+  } catch (e) { /* ignora e cai no fallback */ }
+  if (cacheRaw) {
+    try { const c = JSON.parse(cacheRaw); if (c && c.valor) return c.valor; } catch (e) {}
+  }
+  return CAMBIO_FALLBACK;
+}
+
+/**
+ * Calcula o custo do processamento a partir do usageMetadata retornado pela API.
+ * O custo de saída inclui os tokens de "raciocínio" (contabilizados no total).
+ */
+function calcularCusto(usage) {
+  usage = usage || {};
+  const inputTokens = usage.promptTokenCount || 0;
+  const total = usage.totalTokenCount || 0;
+  let outputTokens;
+  if (total > inputTokens) {
+    outputTokens = total - inputTokens;
+  } else {
+    outputTokens = (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0);
+  }
+  const usd = (inputTokens / 1e6) * PRECO_INPUT_USD_1M + (outputTokens / 1e6) * PRECO_OUTPUT_USD_1M;
+  const cambio = obterCambioUsdBrl();
+  return {
+    inputTokens: inputTokens,
+    outputTokens: outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    usd: usd,
+    brl: usd * cambio,
+    cambio: cambio,
+    modelo: GEMINI_MODEL_NAME,
+    em: new Date().toISOString()
+  };
 }
 
 /**
@@ -934,7 +1007,10 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       parecerConsolidado: parsedData.parecerConsolidado || "Análise concluída sem parecer textual.",
       status: parsedData.status || "EM REVISÃO"
     };
-    
+
+    // Custo real deste processamento (tokens reais reportados pela API + câmbio ao vivo)
+    finalResult.custo = calcularCusto(parsedRaw.usageMetadata);
+
     // Grava (ou mescla, se a matrícula já existir) no banco
     return registrarOuMesclar(finalResult);
 
