@@ -133,9 +133,12 @@
 
     <!-- Rodapé Cooperativa -->
     <div class="p-4 border-t border-border-gray bg-bg-body/50">
-      <div class="flex items-center gap-3 text-xs text-text-gray mb-3">
-        <i data-lucide="calendar" class="w-4 h-4"></i>
-        <span>Google Apps Script v1.0</span>
+      <div class="flex items-start gap-2 text-xs mb-3 bg-white border border-border-gray rounded-lg p-2.5">
+        <i data-lucide="user-circle" class="w-4 h-4 shrink-0 text-primary-green mt-0.5"></i>
+        <div class="min-w-0">
+          <p id="user-email" class="text-[11px] font-semibold text-text-dark truncate">—</p>
+          <span id="user-role" class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-bg-body text-text-gray">Consulta</span>
+        </div>
       </div>
       <div class="bg-primary-green text-white p-3 rounded-lg flex flex-col gap-1">
         <span class="text-[10px] uppercase font-bold tracking-wider opacity-80">Cooperativa Cresol</span>
@@ -157,7 +160,7 @@
           — Integrado com Google Workspace
         </span>
       </div>
-      <button onclick="switchView('importacao')" class="bg-accent-orange hover:bg-accent-orange/95 text-white text-xs font-bold px-4 py-2 rounded shadow transition-all flex items-center gap-2">
+      <button id="btn-nova-importacao" onclick="switchView('importacao')" class="bg-accent-orange hover:bg-accent-orange/95 text-white text-xs font-bold px-4 py-2 rounded shadow transition-all flex items-center gap-2">
         <i data-lucide="plus" class="w-4 h-4"></i>
         <span>Nova Importação</span>
       </button>
@@ -232,14 +235,14 @@
         <!-- Filters -->
         <div class="bg-white p-5 rounded-lg soft-shadow border border-border-gray">
           <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-            <div class="md:col-span-6">
+            <div class="md:col-span-4">
               <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Buscar Imóvel ou Proprietário</label>
               <div class="relative">
-                <input type="text" id="search-input" oninput="renderTable()" placeholder="Busque por Comarca, CPF, Proprietário ou Matrícula..." class="w-full border border-border-gray rounded-lg p-2.5 pl-10 text-sm outline-none">
+                <input type="text" id="search-input" oninput="renderTable()" placeholder="Comarca, CPF, Proprietário ou Matrícula..." class="w-full border border-border-gray rounded-lg p-2.5 pl-10 text-sm outline-none">
                 <i data-lucide="search" class="w-4 h-4 text-text-gray absolute left-3.5 top-3.5"></i>
               </div>
             </div>
-            <div class="md:col-span-4">
+            <div class="md:col-span-3">
               <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Filtrar Status</label>
               <select id="status-filter" onchange="renderTable()" class="w-full border border-border-gray rounded-lg p-2.5 text-sm bg-white outline-none">
                 <option value="TODOS">Todos os Status</option>
@@ -251,8 +254,16 @@
               </select>
             </div>
             <div class="md:col-span-2">
-              <button onclick="clearFilters()" class="w-full text-text-gray hover:text-text-dark font-semibold text-xs border border-dashed border-border-gray py-3 rounded-lg hover:border-text-gray transition-all">
-                Limpar Filtros
+              <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Importada de</label>
+              <input type="date" id="date-from" onchange="renderTable()" class="w-full border border-border-gray rounded-lg p-2.5 text-sm bg-white outline-none">
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Até</label>
+              <input type="date" id="date-to" onchange="renderTable()" class="w-full border border-border-gray rounded-lg p-2.5 text-sm bg-white outline-none">
+            </div>
+            <div class="md:col-span-1">
+              <button onclick="clearFilters()" title="Limpar Filtros" class="w-full text-text-gray hover:text-text-dark font-semibold text-xs border border-dashed border-border-gray py-3 rounded-lg hover:border-text-gray transition-all flex items-center justify-center">
+                <i data-lucide="filter-x" class="w-4 h-4"></i>
               </button>
             </div>
           </div>
@@ -275,13 +286,12 @@
               <thead class="bg-primary-green text-white font-bold text-xs">
                 <tr>
                   <th class="px-6 py-4">ID do Lote</th>
-                  <th class="px-6 py-4">Nº Matrícula</th>
-                  <th class="px-6 py-4">Comarca / UF</th>
-                  <th class="px-6 py-4">Área Total</th>
+                  <th class="px-6 py-4 w-[170px]">Nº Matrícula</th>
+                  <th class="px-6 py-4 w-[170px]">Comarca / UF</th>
+                  <th class="px-6 py-4 w-[170px]">Área Total</th>
                   <th class="px-6 py-4">Data Emissão Certidão</th>
                   <th class="px-6 py-4 min-w-[360px]">Proprietário(s)</th>
                   <th class="px-6 py-4">CPF's / CNPJ's</th>
-                  <th class="px-6 py-4 text-center">Status</th>
                   <th class="px-6 py-4">Data e Hora</th>
                   <th class="px-6 py-4 text-right">Ações</th>
                 </tr>
@@ -379,6 +389,10 @@
             <h2 id="analise-detalhada-titulo" class="text-xl font-bold text-text-dark">Laudo Ativo</h2>
           </div>
           <div class="flex gap-2">
+            <a id="btn-open-drive" href="#" target="_blank" rel="noopener" class="hidden bg-white border border-border-gray hover:bg-bg-body text-text-dark text-xs font-bold px-4 py-2.5 rounded shadow flex items-center gap-2 transition-all">
+              <i data-lucide="file" class="w-4 h-4 text-primary-green"></i>
+              <span>Arquivo original</span>
+            </a>
             <button id="btn-save-edits" onclick="triggerSaveEdits()" class="hidden bg-accent-orange hover:bg-accent-orange/95 text-white text-xs font-bold px-4 py-2.5 rounded shadow flex items-center gap-2 transition-all">
               <i data-lucide="save" class="w-4 h-4"></i>
               <span>Salvar Alterações</span>
@@ -676,6 +690,14 @@
                 </div>
               </div>
 
+              <div>
+                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">ID da Pasta do Drive (arquivos importados)</label>
+                <input type="text" id="config-drive-folder" placeholder="Ex.: 1A2b3C4d5E6f7G8h9I0j..." class="w-full border border-border-gray rounded-lg p-2.5 text-sm font-mono outline-none focus:ring-1 focus:ring-primary-green">
+                <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">
+                  Os PDFs/imagens importados serão salvos nesta pasta, renomeados com o <strong>ID do Lote</strong>. O ID da pasta é a parte final da URL do Drive (após <code>/folders/</code>). Deixe em branco para não salvar os arquivos.
+                </p>
+              </div>
+
               <button type="submit" class="bg-primary-green hover:bg-primary-green/95 text-white font-bold text-xs px-5 py-3 rounded-lg shadow-md transition-all flex items-center gap-2">
                 <i data-lucide="save" class="w-4 h-4"></i>
                 <span>Salvar Configurações</span>
@@ -711,6 +733,64 @@
             </div>
           </div>
 
+          <!-- Administradores (controle de acesso) -->
+          <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden lg:col-span-2">
+            <div class="p-6 border-b border-border-gray">
+              <h3 class="font-bold text-primary-green flex items-center gap-2 text-sm uppercase tracking-wider">
+                <i data-lucide="users-round" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Administradores do Sistema
+              </h3>
+              <p class="text-xs text-text-gray mt-1">Apenas administradores acessam as abas <strong>Importação IA</strong> e <strong>Configurações</strong>. O acesso é definido pelo e-mail logado (conta Cresol).</p>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="flex flex-col sm:flex-row gap-3">
+                <input type="email" id="novo-admin-email" placeholder="email@cresolsicoper.com.br" class="flex-1 border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <button onclick="adicionarAdminUI()" class="bg-primary-green hover:bg-primary-green/95 text-white font-bold text-xs px-5 py-3 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+                  <i data-lucide="user-plus" class="w-4 h-4"></i>
+                  <span>Adicionar Admin</span>
+                </button>
+              </div>
+              <div id="admins-list" class="space-y-2">
+                <!-- Dinâmico -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Relatório XLS -->
+          <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden lg:col-span-2">
+            <div class="p-6 border-b border-border-gray">
+              <h3 class="font-bold text-primary-green flex items-center gap-2 text-sm uppercase tracking-wider">
+                <i data-lucide="file-spreadsheet" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Relatório de Matrículas (Excel / XLSX)
+              </h3>
+              <p class="text-xs text-text-gray mt-1">Uma linha por proprietário, com Matrícula, Comarca, Área Total, Data de Emissão da Certidão, Nome do Titular, CPF/CNPJ e Fração Ideal (área). Use o período para filtrar por data de importação (opcional).</p>
+            </div>
+            <div class="p-6">
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                <div class="md:col-span-4">
+                  <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Importada de</label>
+                  <input type="date" id="rel-date-from" class="w-full border border-border-gray rounded-lg p-2.5 text-sm bg-white outline-none">
+                </div>
+                <div class="md:col-span-4">
+                  <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Até</label>
+                  <input type="date" id="rel-date-to" class="w-full border border-border-gray rounded-lg p-2.5 text-sm bg-white outline-none">
+                </div>
+                <div class="md:col-span-2">
+                  <button onclick="gerarRelatorio('xlsx')" class="w-full bg-primary-green hover:bg-primary-green/95 text-white font-bold text-xs px-4 py-3 rounded-lg shadow-md transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                    <span>Baixar XLSX</span>
+                  </button>
+                </div>
+                <div class="md:col-span-2">
+                  <button onclick="gerarRelatorio('csv')" class="w-full bg-white border border-primary-green text-primary-green hover:bg-primary-green/5 font-bold text-xs px-4 py-3 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span>Baixar CSV</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -725,6 +805,7 @@
     let selectedAnalysis = null;
     let selectedFileBase64 = ''; // DataURL do PDF/imagem anexado, enviado à IA para OCR
     let isAnalyzing = false; // impede envios simultâneos enquanto uma análise está em andamento
+    let sessao = { email: '', isAdmin: false, admins: [] }; // usuário logado e perfil
     const ANALYZE_TIMEOUT_MS = 360000; // 6 min — limite máximo de execução do Apps Script
     let config = {
       spreadsheetUrl: '',
@@ -736,8 +817,58 @@
     // Initialization on window load
     window.onload = function() {
       lucide.createIcons();
-      loadInitialData();
+      loadSessao();
     };
+
+    // Identifica o usuário logado e o perfil antes de montar a interface
+    function loadSessao() {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(s) {
+            sessao = s || { email: '', isAdmin: false, admins: [] };
+            applyPermissions();
+            loadInitialData();
+          })
+          .withFailureHandler(function(err) {
+            sessao = { email: '', isAdmin: false, admins: [] };
+            applyPermissions();
+            loadInitialData();
+          })
+          .getSessao();
+      } else {
+        // Preview local (fora do Apps Script): libera tudo para desenvolvimento
+        sessao = { email: 'preview@local', isAdmin: true, admins: [] };
+        applyPermissions();
+        loadInitialData();
+      }
+    }
+
+    // Aplica as permissões de perfil na interface
+    function applyPermissions() {
+      const admin = !!(sessao && sessao.isAdmin);
+
+      const navImp = document.getElementById('nav-importacao');
+      const navCfg = document.getElementById('nav-configuracoes');
+      const btnNova = document.getElementById('btn-nova-importacao');
+      if (navImp) navImp.classList.toggle('hidden', !admin);
+      if (navCfg) navCfg.classList.toggle('hidden', !admin);
+      if (btnNova) btnNova.classList.toggle('hidden', !admin);
+
+      const emailEl = document.getElementById('user-email');
+      const roleEl = document.getElementById('user-role');
+      if (emailEl) emailEl.innerText = (sessao && sessao.email) ? sessao.email : 'não identificado';
+      if (roleEl) {
+        roleEl.innerText = admin ? 'Administrador' : 'Consulta';
+        roleEl.className = "text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded " +
+          (admin ? 'bg-primary-green text-white' : 'bg-bg-body text-text-gray');
+      }
+
+      // Se um não-admin estiver numa aba restrita, volta para o dashboard
+      if (!admin && (currentView === 'importacao' || currentView === 'configuracoes')) {
+        switchView('dashboard');
+      }
+      if (admin) renderAdmins();
+    }
 
     // Load initial config and analyses from Google Apps Script
     function loadInitialData() {
@@ -799,6 +930,7 @@
       document.getElementById('config-spreadsheet-url').value = config.spreadsheetUrl || '';
       document.getElementById('config-aba-principal').value = config.abaPrincipal || 'DB_IMPORTACOES';
       document.getElementById('config-aba-alertas').value = config.abaAlertas || 'RISCO_LOG';
+      document.getElementById('config-drive-folder').value = config.driveFolderId || '';
       
       const badge = document.getElementById('api-status-badge');
       if (config.geminiKeyConfigured) {
@@ -814,6 +946,12 @@
 
     // Switch views SPA
     function switchView(viewId) {
+      // Bloqueio de acesso: abas restritas só para administradores
+      if ((viewId === 'importacao' || viewId === 'configuracoes') && !(sessao && sessao.isAdmin)) {
+        showToast("error", "Acesso restrito: apenas administradores podem acessar esta área.");
+        viewId = 'dashboard';
+      }
+
       currentView = viewId;
       document.getElementById('view-dashboard').classList.add('hidden');
       document.getElementById('view-importacao').classList.add('hidden');
@@ -893,6 +1031,8 @@
     function clearFilters() {
       document.getElementById('search-input').value = '';
       document.getElementById('status-filter').value = 'TODOS';
+      document.getElementById('date-from').value = '';
+      document.getElementById('date-to').value = '';
       renderTable();
     }
 
@@ -942,6 +1082,12 @@
       const statusFilter = document.getElementById('status-filter').value;
       const soAlfaNum = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+      // Filtro por data de importação (período)
+      const dfEl = document.getElementById('date-from');
+      const dtEl = document.getElementById('date-to');
+      const dFrom = dfEl && dfEl.value ? new Date(dfEl.value + 'T00:00:00') : null;
+      const dTo = dtEl && dtEl.value ? new Date(dtEl.value + 'T23:59:59') : null;
+
       const filtered = analyses.filter(item => {
         if (!item) return false;
         const imo = item.imovel || {};
@@ -954,7 +1100,17 @@
                               // Matrícula e CPF/CNPJ: compara ignorando pontos, traços e barras
                               (!!queryNum && soAlfaNum(imo.matricula).includes(queryNum)) ||
                               (!!queryNum && props.some(p => p && soAlfaNum(p.documento).includes(queryNum)));
-        return matchesStatus && matchesSearch;
+        let matchesDate = true;
+        if (dFrom || dTo) {
+          let ts = null;
+          try { ts = item.timestamp ? new Date(item.timestamp) : null; } catch (e) { ts = null; }
+          if (!ts) matchesDate = false;
+          else {
+            if (dFrom && ts < dFrom) matchesDate = false;
+            if (dTo && ts > dTo) matchesDate = false;
+          }
+        }
+        return matchesStatus && matchesSearch && matchesDate;
       });
 
       document.getElementById('table-stats').innerText = `Mostrando ${filtered.length} de ${analyses.length} lotes`;
@@ -962,7 +1118,7 @@
       if (filtered.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="10" class="p-8 text-center text-text-gray font-medium">
+            <td colspan="9" class="p-8 text-center text-text-gray font-medium">
               Nenhuma análise de matrícula encontrada na base de dados.
             </td>
           </tr>
@@ -984,17 +1140,12 @@
 
         tr.innerHTML = `
           <td class="px-6 py-4 font-mono font-bold text-primary-green align-top">#${esc(item.id || '—')}</td>
-          <td class="px-6 py-4 font-semibold text-text-dark align-top whitespace-nowrap">${esc(imo.matricula || '—')}</td>
-          <td class="px-6 py-4 text-text-dark align-top">${esc(imo.comarca || '—')}</td>
-          <td class="px-6 py-4 text-text-dark align-top whitespace-nowrap">${esc(imo.area || '—')}</td>
+          <td class="px-6 py-4 font-semibold text-text-dark align-top w-[170px]">${esc(imo.matricula || '—')}</td>
+          <td class="px-6 py-4 text-text-dark align-top w-[170px]">${esc(imo.comarca || '—')}</td>
+          <td class="px-6 py-4 text-text-dark align-top w-[170px]">${esc(imo.area || '—')}</td>
           <td class="px-6 py-4 text-text-gray text-xs align-top whitespace-nowrap">${esc(imo.dataEmissaoCertidao || '—')}</td>
           <td class="px-6 py-4 text-text-dark align-top min-w-[360px] whitespace-normal">${nomes}</td>
           <td class="px-6 py-4 font-mono text-xs text-text-gray align-top">${docs}</td>
-          <td class="px-6 py-4 text-center align-top whitespace-nowrap">
-            <span class="px-3 py-1 rounded-full text-[10px] font-black tracking-wider ${statusBadgeClass(item.status)}">
-              ${esc(item.status)}
-            </span>
-          </td>
           <td class="px-6 py-4 text-text-gray text-xs align-top whitespace-nowrap">${dataFmt}</td>
           <td class="px-6 py-4 text-right align-top whitespace-nowrap" onclick="event.stopPropagation()">
             <div class="flex items-center justify-end gap-2">
@@ -1019,6 +1170,13 @@
       item = selectedAnalysis;
       editsDirty = false;
       document.getElementById('btn-save-edits').classList.add('hidden');
+      const btnDrive = document.getElementById('btn-open-drive');
+      if (item.arquivoDrive && item.arquivoDrive.url) {
+        btnDrive.href = item.arquivoDrive.url;
+        btnDrive.classList.remove('hidden');
+      } else {
+        btnDrive.classList.add('hidden');
+      }
       document.getElementById('nav-analise').classList.remove('hidden');
       document.getElementById('active-laudo-id').innerText = "#" + item.id;
       
@@ -1320,11 +1478,13 @@
       const url = document.getElementById('config-spreadsheet-url').value.trim();
       const abaP = document.getElementById('config-aba-principal').value.trim();
       const abaA = document.getElementById('config-aba-alertas').value.trim();
+      const driveFolder = document.getElementById('config-drive-folder').value.trim();
 
       const newConfig = {
         spreadsheetUrl: url,
         abaPrincipal: abaP,
-        abaAlertas: abaA
+        abaAlertas: abaA,
+        driveFolderId: driveFolder
       };
 
       showLoading("Salvando configurações na base corporativa...");
@@ -1335,6 +1495,7 @@
             config.spreadsheetUrl = response.config.spreadsheetUrl;
             config.abaPrincipal = response.config.abaPrincipal;
             config.abaAlertas = response.config.abaAlertas;
+            config.driveFolderId = response.config.driveFolderId;
             applyConfigToUI();
             updateKPIs();
             hideLoading();
@@ -1350,12 +1511,62 @@
           config.spreadsheetUrl = url;
           config.abaPrincipal = abaP;
           config.abaAlertas = abaA;
+          config.driveFolderId = driveFolder;
           applyConfigToUI();
           updateKPIs();
           hideLoading();
           showToast("success", "Configurações de teste salvas localmente!");
         }, 1000);
       }
+    }
+
+    // Gera e baixa o relatório no formato indicado ('xlsx' ou 'csv')
+    function gerarRelatorio(formato) {
+      const de = document.getElementById('rel-date-from').value;
+      const ate = document.getElementById('rel-date-to').value;
+      if (de && ate && de > ate) {
+        showToast("error", "A data inicial não pode ser maior que a final.");
+        return;
+      }
+      const isCsv = formato === 'csv';
+      showLoading(isCsv ? "Gerando relatório em CSV..." : "Gerando relatório em Excel...");
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        const runner = google.script.run
+          .withSuccessHandler(function(res) {
+            hideLoading();
+            try {
+              baixarBase64(res.base64, res.filename, res.mimeType);
+              showToast("success", "Relatório gerado com " + res.registros + " linha(s).");
+            } catch (e) {
+              showToast("error", "Falha ao baixar o arquivo: " + e.message);
+            }
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao gerar relatório: " + err);
+          });
+        if (isCsv) runner.gerarRelatorioCSV(de, ate);
+        else runner.gerarRelatorioXLS(de, ate);
+      } else {
+        hideLoading();
+        showToast("error", "A geração de relatório só funciona publicada no Google Apps Script.");
+      }
+    }
+
+    // Converte base64 em arquivo e dispara o download no navegador
+    function baixarBase64(base64, filename, mimeType) {
+      const bin = atob(base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'relatorio.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
     }
 
     // Save Gemini API Key
@@ -1388,6 +1599,86 @@
           document.getElementById('config-gemini-key').value = '';
           showToast("success", "Simulação: chaves de teste atualizadas!");
         }, 1000);
+      }
+    }
+
+    // ===== Administradores =====
+    function renderAdmins() {
+      const wrap = document.getElementById('admins-list');
+      if (!wrap) return;
+      const admins = (sessao && Array.isArray(sessao.admins)) ? sessao.admins : [];
+      wrap.innerHTML = '';
+      if (admins.length === 0) {
+        wrap.innerHTML = `<p class="text-xs text-text-gray">Nenhum administrador cadastrado.</p>`;
+        return;
+      }
+      admins.forEach(function(email) {
+        const principal = String(email).toLowerCase() === 'jeferson.deimling@cresolsicoper.com.br';
+        wrap.innerHTML += `
+          <div class="flex items-center justify-between gap-3 px-3 py-2 bg-bg-body rounded-lg border border-border-gray">
+            <span class="text-sm text-text-dark font-mono truncate flex items-center gap-2">
+              <i data-lucide="user" class="w-3.5 h-3.5 text-primary-green shrink-0"></i>
+              ${esc(email)}
+              ${principal ? '<span class="text-[9px] font-bold bg-primary-green text-white px-1.5 py-0.5 rounded uppercase">principal</span>' : ''}
+            </span>
+            ${principal ? '' : `<button onclick="removerAdminUI('${esc(email)}')" title="Remover" class="text-danger-red hover:bg-danger-red/10 p-1.5 rounded transition-all shrink-0"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`}
+          </div>`;
+      });
+      lucide.createIcons();
+    }
+
+    function adicionarAdminUI() {
+      const input = document.getElementById('novo-admin-email');
+      const email = (input.value || '').trim();
+      if (!email || email.indexOf('@') === -1) {
+        showToast("error", "Informe um e-mail válido.");
+        return;
+      }
+      showLoading("Cadastrando administrador...");
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            sessao.admins = res.admins || sessao.admins;
+            input.value = '';
+            renderAdmins();
+            hideLoading();
+            showToast("success", res.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao cadastrar: " + err);
+          })
+          .adicionarAdmin(email);
+      } else {
+        sessao.admins = (sessao.admins || []).concat([email.toLowerCase()]);
+        input.value = '';
+        renderAdmins();
+        hideLoading();
+        showToast("success", "Simulação: admin adicionado localmente.");
+      }
+    }
+
+    function removerAdminUI(email) {
+      if (!confirm("Remover o administrador " + email + "?")) return;
+      showLoading("Removendo administrador...");
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            sessao.admins = res.admins || [];
+            renderAdmins();
+            hideLoading();
+            showToast("success", res.message);
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao remover: " + err);
+          })
+          .removerAdmin(email);
+      } else {
+        sessao.admins = (sessao.admins || []).filter(e => String(e).toLowerCase() !== String(email).toLowerCase());
+        renderAdmins();
+        hideLoading();
+        showToast("success", "Simulação: admin removido localmente.");
       }
     }
 

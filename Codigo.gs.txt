@@ -14,6 +14,108 @@ const PRECO_INPUT_USD_1M = 0.30;   // US$ / 1M tokens de entrada
 const PRECO_OUTPUT_USD_1M = 2.50;  // US$ / 1M tokens de saída (inclui tokens de raciocínio)
 const CAMBIO_FALLBACK = 5.40;      // usado se a cotação ao vivo falhar
 
+// Controle de acesso por perfil (baseado no e-mail logado)
+const PROP_ADMINS = 'CRESOL_ADMINS_JSON';
+const ADMIN_INICIAL = 'jeferson.deimling@cresolsicoper.com.br';
+
+/**
+ * E-mail do usuário logado (domínio Cresol), em minúsculas. Vazio se não for possível identificar.
+ */
+function getUsuarioAtual() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    return email ? email.trim().toLowerCase() : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * Lista de e-mails administradores. Garante o admin inicial sempre presente.
+ */
+function getAdmins() {
+  const props = PropertiesService.getScriptProperties();
+  let lista = [];
+  const raw = props.getProperty(PROP_ADMINS);
+  if (raw) {
+    try { lista = JSON.parse(raw); } catch (e) { lista = []; }
+  }
+  if (!Array.isArray(lista)) lista = [];
+  const inicial = ADMIN_INICIAL.toLowerCase();
+  const jaTem = lista.some(function(e) { return String(e).trim().toLowerCase() === inicial; });
+  if (!jaTem) {
+    lista.unshift(ADMIN_INICIAL);
+    props.setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return lista;
+}
+
+/**
+ * Indica se um e-mail é administrador.
+ */
+function isAdmin(email) {
+  if (!email) return false;
+  const e = String(email).trim().toLowerCase();
+  return getAdmins().some(function(a) { return String(a).trim().toLowerCase() === e; });
+}
+
+/**
+ * Sessão do usuário para a interface: e-mail, se é admin e (para admins) a lista de admins.
+ */
+function getSessao() {
+  const email = getUsuarioAtual();
+  const admin = isAdmin(email);
+  return {
+    email: email,
+    isAdmin: admin,
+    admins: admin ? getAdmins() : []
+  };
+}
+
+/**
+ * Barreira de segurança: lança erro se o chamador não for administrador.
+ * Usada nas funções sensíveis (Importação IA e Configurações).
+ */
+function exigirAdmin() {
+  const email = getUsuarioAtual();
+  if (!isAdmin(email)) {
+    const detalhe = email
+      ? ' (' + email + ')'
+      : '. Não foi possível identificar seu e-mail — verifique se está logado com a conta Cresol e se o app está publicado com acesso restrito ao domínio.';
+    throw new Error('Acesso restrito: apenas administradores podem executar esta ação' + detalhe);
+  }
+  return email;
+}
+
+/**
+ * Cadastra um novo administrador (somente admin).
+ */
+function adicionarAdmin(email) {
+  exigirAdmin();
+  const e = String(email || '').trim().toLowerCase();
+  if (!e || e.indexOf('@') === -1) throw new Error('E-mail inválido.');
+  const lista = getAdmins();
+  if (!lista.some(function(x) { return String(x).trim().toLowerCase() === e; })) {
+    lista.push(e);
+    PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return { success: true, admins: lista, message: 'Administrador ' + e + ' cadastrado com sucesso.' };
+}
+
+/**
+ * Remove um administrador (somente admin). O admin principal não pode ser removido.
+ */
+function removerAdmin(email) {
+  exigirAdmin();
+  const e = String(email || '').trim().toLowerCase();
+  if (e === ADMIN_INICIAL.toLowerCase()) {
+    throw new Error('O administrador principal não pode ser removido.');
+  }
+  const lista = getAdmins().filter(function(x) { return String(x).trim().toLowerCase() !== e; });
+  PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
+  return { success: true, admins: lista, message: 'Administrador ' + e + ' removido.' };
+}
+
 /**
  * Renderiza a interface do usuário (Single Page Application)
  */
@@ -55,6 +157,7 @@ function getGeminiApiKey() {
  * Salva uma ou mais chaves de API do Gemini (uma por linha) de forma segura.
  */
 function salvarGeminiApiKey(key) {
+  exigirAdmin(); // Configuração de chaves restrita a administradores
   const props = PropertiesService.getScriptProperties();
   const keys = String(key || '').split(/[\r\n,;]+/)
                  .map(function(k) { return k.trim(); })
@@ -84,6 +187,7 @@ function getSystemConfig() {
     spreadsheetUrl: '',
     abaPrincipal: 'DB_IMPORTACOES',
     abaAlertas: 'RISCO_LOG',
+    driveFolderId: '',
     geminiKeyConfigured: keysCount > 0,
     geminiKeysCount: keysCount
   };
@@ -106,10 +210,12 @@ function getSystemConfig() {
  * Salva as configurações de integração do Google Sheets
  */
 function salvarSystemConfig(config) {
+  exigirAdmin(); // Configurações restritas a administradores
   const systemConfig = {
     spreadsheetUrl: config.spreadsheetUrl || '',
     abaPrincipal: config.abaPrincipal || 'DB_IMPORTACOES',
-    abaAlertas: config.abaAlertas || 'RISCO_LOG'
+    abaAlertas: config.abaAlertas || 'RISCO_LOG',
+    driveFolderId: config.driveFolderId || ''
   };
   
   PropertiesService.getScriptProperties().setProperty(PROP_CONFIG, JSON.stringify(systemConfig));
@@ -797,9 +903,175 @@ function calcularCusto(usage) {
 }
 
 /**
+ * Persiste uma atualização de registro no banco local e re-sincroniza a planilha.
+ */
+function persistirAtualizacao(obj) {
+  const list = getBancoLocal();
+  let found = false;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i] && list[i].id === obj.id) { list[i] = obj; found = true; break; }
+  }
+  if (!found) list.unshift(obj);
+  salvarBancoLocal(list);
+  autoExportar(obj.id);
+}
+
+/**
+ * Salva o arquivo importado (PDF/imagem) numa pasta do Drive, renomeado com o ID do Lote.
+ * Retorna { id, url, nome } do arquivo criado.
+ */
+function salvarArquivoDrive(folderId, loteId, fileBase64, fileName, versao) {
+  const folder = DriveApp.getFolderById(folderId);
+  let mime = 'application/pdf';
+  let b64 = fileBase64;
+  if (fileBase64.indexOf('base64,') > -1) {
+    const partes = fileBase64.split('base64,');
+    const header = partes[0];
+    b64 = partes[1];
+    if (header.indexOf('image/png') > -1) mime = 'image/png';
+    else if (header.indexOf('image/jpeg') > -1 || header.indexOf('image/jpg') > -1) mime = 'image/jpeg';
+    else if (header.indexOf('application/pdf') > -1) mime = 'application/pdf';
+  } else {
+    const low = String(fileName || '').toLowerCase();
+    if (low.endsWith('.png')) mime = 'image/png';
+    else if (low.endsWith('.jpg') || low.endsWith('.jpeg')) mime = 'image/jpeg';
+  }
+  const ext = mime === 'image/png' ? 'png' : (mime === 'image/jpeg' ? 'jpg' : 'pdf');
+  // Nome com o ID do Lote; em reimportações acrescenta a versão para não sobrescrever
+  const nome = loteId + (versao && versao > 1 ? ('_v' + versao) : '') + '.' + ext;
+  const bytes = Utilities.base64Decode(b64);
+  const blob = Utilities.newBlob(bytes, mime, nome);
+  const file = folder.createFile(blob);
+  return { id: file.getId(), url: file.getUrl(), nome: nome };
+}
+
+/**
+ * Extrai apenas a quantidade de área (texto) de uma fração ideal.
+ * Ex.: "24,35% (43.425,25m²)" -> "43.425,25 m²". Se não houver área, retorna a fração original.
+ */
+function extrairAreaTexto(texto) {
+  if (!texto) return '';
+  const m = String(texto).match(/([\d.]+(?:,\d+)?)\s*(m²|m2|metros?\s*quadrados?|hectares?|ha)/i);
+  if (!m) return String(texto).trim(); // sem área explícita: mantém o que veio (ex.: só "%")
+  let unidade = m[2].toLowerCase();
+  if (unidade === 'm2') unidade = 'm²';
+  if (unidade === 'ha' || unidade.indexOf('hectare') > -1) unidade = 'ha';
+  return m[1] + ' ' + unidade;
+}
+
+/**
+ * Monta as linhas do relatório (uma linha por proprietário), filtrando por período de importação.
+ * Colunas: Matrícula, Comarca, Área Total, Data Emissão Certidão, Nome do Titular, CPF/CNPJ, Fração Ideal (área).
+ */
+function montarLinhasRelatorio(dataInicio, dataFim) {
+  const inicio = dataInicio ? new Date(dataInicio + 'T00:00:00') : null;
+  const fim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
+
+  const todas = listarAnalises();
+  const linhas = [['Matrícula', 'Comarca', 'Área Total', 'Data Emissão Certidão', 'Nome do Titular', 'CPF / CNPJ', 'Fração Ideal (área)']];
+
+  todas.forEach(function(a) {
+    if (!a) return;
+    let dt = null;
+    try { dt = a.timestamp ? new Date(a.timestamp) : null; } catch (e) { dt = null; }
+    if (inicio && dt && dt < inicio) return;
+    if (fim && dt && dt > fim) return;
+    if ((inicio || fim) && !dt) return; // sem data não entra em filtro por período
+
+    const imo = a.imovel || {};
+    const matricula = imo.matricula || '';
+    const comarca = imo.comarca || '';
+    const area = imo.area || '';
+    const dataEmissao = imo.dataEmissaoCertidao || '';
+    const props = Array.isArray(a.proprietarios) ? a.proprietarios : [];
+
+    if (props.length === 0) {
+      linhas.push([matricula, comarca, area, dataEmissao, '', '', '']);
+    } else {
+      props.forEach(function(p) {
+        linhas.push([
+          matricula, comarca, area, dataEmissao,
+          (p && p.nome) || '',
+          (p && p.documento) || '',
+          extrairAreaTexto(p && p.participacao)
+        ]);
+      });
+    }
+  });
+
+  return linhas;
+}
+
+/**
+ * Gera o relatório em XLSX (Excel), uma linha por proprietário. Retorna { filename, mimeType, base64 }.
+ */
+function gerarRelatorioXLS(dataInicio, dataFim) {
+  exigirAdmin(); // Relatório fica na aba Configurações (restrita a admin)
+  const linhas = montarLinhasRelatorio(dataInicio, dataFim);
+  const nCols = linhas[0].length;
+
+  const ss = SpreadsheetApp.create('Relatorio_Cresol_tmp_' + new Date().getTime());
+  const fileId = ss.getId();
+  try {
+    const sheet = ss.getSheets()[0];
+    sheet.setName('Relatório');
+    sheet.getRange(1, 1, linhas.length, nCols).setValues(linhas);
+    const header = sheet.getRange(1, 1, 1, nCols);
+    header.setBackground('#005c46').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    SpreadsheetApp.flush();
+
+    const url = 'https://docs.google.com/spreadsheets/d/' + fileId + '/export?format=xlsx';
+    const resp = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    const base64 = Utilities.base64Encode(resp.getBlob().getBytes());
+
+    const hoje = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return {
+      filename: 'Relatorio_Matriculas_' + hoje + '.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      base64: base64,
+      registros: linhas.length - 1
+    };
+  } finally {
+    try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
+  }
+}
+
+/**
+ * Gera o relatório em CSV (separador ';', UTF-8 com BOM para abrir corretamente no Excel).
+ */
+function gerarRelatorioCSV(dataInicio, dataFim) {
+  exigirAdmin();
+  const linhas = montarLinhasRelatorio(dataInicio, dataFim);
+  const sep = ';';
+  const csv = linhas.map(function(row) {
+    return row.map(function(c) {
+      let s = (c == null) ? '' : String(c);
+      if (s.indexOf('"') > -1) s = s.replace(/"/g, '""');
+      if (s.indexOf(sep) > -1 || s.indexOf('"') > -1 || s.indexOf('\n') > -1 || s.indexOf('\r') > -1) s = '"' + s + '"';
+      return s;
+    }).join(sep);
+  }).join('\r\n');
+  const comBom = String.fromCharCode(0xFEFF) + csv; // BOM UTF-8 para acentuação correta no Excel
+  const base64 = Utilities.base64Encode(comBom, Utilities.Charset.UTF_8);
+
+  const hoje = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return {
+    filename: 'Relatorio_Matriculas_' + hoje + '.csv',
+    mimeType: 'text/csv;charset=utf-8',
+    base64: base64,
+    registros: linhas.length - 1
+  };
+}
+
+/**
  * Envia o documento para análise via API do Gemini
  */
 function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
+  exigirAdmin(); // Importação IA restrita a administradores
   const selectedMetodo = metodo || "Especialista Imobiliário v4";
   const name = fileName || "Documento.txt";
   const uniqueId = "CRT-" + Math.floor(1000 + Math.random() * 9000);
@@ -1012,7 +1284,24 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
     finalResult.custo = calcularCusto(parsedRaw.usageMetadata);
 
     // Grava (ou mescla, se a matrícula já existir) no banco
-    return registrarOuMesclar(finalResult);
+    const resultado = registrarOuMesclar(finalResult);
+
+    // Salva o arquivo importado no Drive (renomeado com o ID do Lote), se configurado
+    if (fileBase64 && fileBase64.trim() !== "") {
+      try {
+        const cfg = getSystemConfig();
+        if (cfg.driveFolderId) {
+          const versao = Array.isArray(resultado.historico) ? resultado.historico.length : 1;
+          const info = salvarArquivoDrive(cfg.driveFolderId, resultado.id, fileBase64, name, versao);
+          resultado.arquivoDrive = info;
+          persistirAtualizacao(resultado); // grava o link do arquivo no registro
+        }
+      } catch (e) {
+        // Não interrompe a análise se o Drive falhar (ex.: pasta inválida ou sem permissão)
+      }
+    }
+
+    return resultado;
 
   } catch (err) {
     throw new Error("Falha ao se comunicar com o cérebro da Inteligência Artificial: " + err.toString());
