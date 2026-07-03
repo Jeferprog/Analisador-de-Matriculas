@@ -946,18 +946,29 @@ function salvarArquivoDrive(folderId, loteId, fileBase64, fileName, versao) {
 }
 
 /**
- * Gera um relatório XLSX (Excel) dos registros, filtrando por período de importação.
- * Colunas: Matrícula, Comarca, Área Total, Data Emissão Certidão, Proprietários, CPFs.
- * dataInicio/dataFim: 'YYYY-MM-DD' (opcionais). Retorna { filename, mimeType, base64 }.
+ * Extrai apenas a quantidade de área (texto) de uma fração ideal.
+ * Ex.: "24,35% (43.425,25m²)" -> "43.425,25 m²". Se não houver área, retorna a fração original.
  */
-function gerarRelatorioXLS(dataInicio, dataFim) {
-  exigirAdmin(); // Relatório fica na aba Configurações (restrita a admin)
+function extrairAreaTexto(texto) {
+  if (!texto) return '';
+  const m = String(texto).match(/([\d.]+(?:,\d+)?)\s*(m²|m2|metros?\s*quadrados?|hectares?|ha)/i);
+  if (!m) return String(texto).trim(); // sem área explícita: mantém o que veio (ex.: só "%")
+  let unidade = m[2].toLowerCase();
+  if (unidade === 'm2') unidade = 'm²';
+  if (unidade === 'ha' || unidade.indexOf('hectare') > -1) unidade = 'ha';
+  return m[1] + ' ' + unidade;
+}
 
+/**
+ * Monta as linhas do relatório (uma linha por proprietário), filtrando por período de importação.
+ * Colunas: Matrícula, Comarca, Área Total, Data Emissão Certidão, Nome do Titular, CPF/CNPJ, Fração Ideal (área).
+ */
+function montarLinhasRelatorio(dataInicio, dataFim) {
   const inicio = dataInicio ? new Date(dataInicio + 'T00:00:00') : null;
   const fim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
 
   const todas = listarAnalises();
-  const linhas = [['Matrícula', 'Comarca', 'Área Total', 'Data Emissão Certidão', 'Proprietários', 'CPFs']];
+  const linhas = [['Matrícula', 'Comarca', 'Área Total', 'Data Emissão Certidão', 'Nome do Titular', 'CPF / CNPJ', 'Fração Ideal (área)']];
 
   todas.forEach(function(a) {
     if (!a) return;
@@ -968,27 +979,44 @@ function gerarRelatorioXLS(dataInicio, dataFim) {
     if ((inicio || fim) && !dt) return; // sem data não entra em filtro por período
 
     const imo = a.imovel || {};
+    const matricula = imo.matricula || '';
+    const comarca = imo.comarca || '';
+    const area = imo.area || '';
+    const dataEmissao = imo.dataEmissaoCertidao || '';
     const props = Array.isArray(a.proprietarios) ? a.proprietarios : [];
-    const nomes = props.map(function(p) { return (p && p.nome) ? p.nome : ''; }).filter(String).join('; ');
-    const docs = props.map(function(p) { return (p && p.documento) ? p.documento : ''; }).filter(String).join('; ');
-    linhas.push([
-      imo.matricula || '',
-      imo.comarca || '',
-      imo.area || '',
-      imo.dataEmissaoCertidao || '',
-      nomes,
-      docs
-    ]);
+
+    if (props.length === 0) {
+      linhas.push([matricula, comarca, area, dataEmissao, '', '', '']);
+    } else {
+      props.forEach(function(p) {
+        linhas.push([
+          matricula, comarca, area, dataEmissao,
+          (p && p.nome) || '',
+          (p && p.documento) || '',
+          extrairAreaTexto(p && p.participacao)
+        ]);
+      });
+    }
   });
 
-  // Cria uma planilha temporária, escreve os dados e exporta como XLSX
+  return linhas;
+}
+
+/**
+ * Gera o relatório em XLSX (Excel), uma linha por proprietário. Retorna { filename, mimeType, base64 }.
+ */
+function gerarRelatorioXLS(dataInicio, dataFim) {
+  exigirAdmin(); // Relatório fica na aba Configurações (restrita a admin)
+  const linhas = montarLinhasRelatorio(dataInicio, dataFim);
+  const nCols = linhas[0].length;
+
   const ss = SpreadsheetApp.create('Relatorio_Cresol_tmp_' + new Date().getTime());
   const fileId = ss.getId();
   try {
     const sheet = ss.getSheets()[0];
     sheet.setName('Relatório');
-    sheet.getRange(1, 1, linhas.length, 6).setValues(linhas);
-    const header = sheet.getRange(1, 1, 1, 6);
+    sheet.getRange(1, 1, linhas.length, nCols).setValues(linhas);
+    const header = sheet.getRange(1, 1, 1, nCols);
     header.setBackground('#005c46').setFontColor('#ffffff').setFontWeight('bold');
     sheet.setFrozenRows(1);
     SpreadsheetApp.flush();
@@ -998,8 +1026,7 @@ function gerarRelatorioXLS(dataInicio, dataFim) {
       headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
       muteHttpExceptions: true
     });
-    const blob = resp.getBlob();
-    const base64 = Utilities.base64Encode(blob.getBytes());
+    const base64 = Utilities.base64Encode(resp.getBlob().getBytes());
 
     const hoje = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
     return {
@@ -1009,9 +1036,35 @@ function gerarRelatorioXLS(dataInicio, dataFim) {
       registros: linhas.length - 1
     };
   } finally {
-    // Remove a planilha temporária
     try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
   }
+}
+
+/**
+ * Gera o relatório em CSV (separador ';', UTF-8 com BOM para abrir corretamente no Excel).
+ */
+function gerarRelatorioCSV(dataInicio, dataFim) {
+  exigirAdmin();
+  const linhas = montarLinhasRelatorio(dataInicio, dataFim);
+  const sep = ';';
+  const csv = linhas.map(function(row) {
+    return row.map(function(c) {
+      let s = (c == null) ? '' : String(c);
+      if (s.indexOf('"') > -1) s = s.replace(/"/g, '""');
+      if (s.indexOf(sep) > -1 || s.indexOf('"') > -1 || s.indexOf('\n') > -1 || s.indexOf('\r') > -1) s = '"' + s + '"';
+      return s;
+    }).join(sep);
+  }).join('\r\n');
+  const comBom = String.fromCharCode(0xFEFF) + csv; // BOM UTF-8 para acentuação correta no Excel
+  const base64 = Utilities.base64Encode(comBom, Utilities.Charset.UTF_8);
+
+  const hoje = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return {
+    filename: 'Relatorio_Matriculas_' + hoje + '.csv',
+    mimeType: 'text/csv;charset=utf-8',
+    base64: base64,
+    registros: linhas.length - 1
+  };
 }
 
 /**
