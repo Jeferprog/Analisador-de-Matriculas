@@ -615,6 +615,20 @@ function valorVazio(v) {
 }
 
 /**
+ * Mantém apenas os proprietários ATUAIS, descartando quem a IA por ventura marcou
+ * como anterior/histórico (o dono anterior fica só na cadeia dominial).
+ */
+function apenasProprietariosAtuais(lista) {
+  if (!Array.isArray(lista)) return [];
+  return lista.filter(function(p) {
+    if (!p) return false;
+    const st = String(p.status || '').toLowerCase();
+    if (st.indexOf('históric') > -1 || st.indexOf('historic') > -1 || st.indexOf('anterior') > -1) return false;
+    return true;
+  });
+}
+
+/**
  * Extrai a soma de áreas (em m²) mencionadas em um texto, convertendo hectares para m².
  * Reconhece formato brasileiro (43.425,25 m²) e unidades m²/m2/ha/hectare(s).
  */
@@ -1092,7 +1106,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "METODOLOGIA DE VALIDAÇÃO CRUZADA (aplique internamente antes de responder):\n" +
       "1. Extração registral: transcreva Matrícula, Ofício/Cartório e Comarca, tipo do imóvel (urbano/rural/gleba), endereço/localização, área total e área construída, Cadastro INCRA/CCIR quando rural, e a data/hora de emissão da certidão.\n" +
       "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta. IMPORTANTE: a área total NUNCA deve ficar vazia — se o documento não trouxer o total de forma explícita, calcule-o somando as áreas das frações dos proprietários (imóvel de marido e esposa/coproprietários = 100% da área) e preencha o campo 'area'.\n" +
-      "3. Qualificação subjetiva: identifique todos os proprietários/fiduciantes com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
+      "3. Qualificação subjetiva: identifique APENAS os PROPRIETÁRIOS ATUAIS (os titulares do domínio conforme o registro de aquisição MAIS RECENTE), com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Proprietários ANTERIORES (que já transmitiram o imóvel) NÃO entram em 'proprietarios' — eles pertencem exclusivamente à 'cadeiaDominial'. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
       "4. Ônus e gravames: liste cada gravame ativo com o registro (R-/AV-), o tipo, o credor/beneficiário e observação/vencimento. Se estiver livre e desembaraçado, declare isso explicitamente.\n" +
       "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n\n" +
       "LEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF nativo, PDF digitalizado ou FOTOGRAFIA da matrícula (torta, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral, lendo todos os R- e AV- na ordem. NUNCA invente dados: se um campo estiver ilegível ou ausente, use 'Não identificado' e registre a ilegibilidade como alerta do tipo ATENÇÃO. Baseie-se estritamente no documento fornecido.";
@@ -1120,7 +1134,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    ]\n" +
                  "  },\n" +
                  "  \"proprietarios\": [\n" +
-                 "    { \"nome\": \"string\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"estadoCivil\": \"string\", \"status\": \"REGULAR|HISTÓRICO|ATENÇÃO\" }\n" +
+                 "    { \"nome\": \"string (SOMENTE proprietários ATUAIS)\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"estadoCivil\": \"string\", \"status\": \"REGULAR|ATENÇÃO\" }\n" +
                  "  ],\n" +
                  "  \"gravames\": [\n" +
                  "    { \"registro\": \"string (R-/AV-)\", \"tipo\": \"string\", \"credor\": \"string\", \"observacao\": \"string (vencimento/obs)\" }\n" +
@@ -1134,7 +1148,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "  \"parecerConsolidado\": \"string (Laudo final de elegibilidade jurídica, incluindo a auditoria de área e as ressalvas de qualificação subjetiva, recomendando ou não a aceitação de garantia creditícia)\",\n" +
                  "  \"status\": \"LIBERADO|EM REVISÃO|REJEITADO\"\n" +
                  "}\n\n" +
-                 "Regras: gravames traz apenas ônus reais registrados; se não houver, retorne lista vazia e declare 'livre de ônus' no parecer. alertas traz avisos de risco/compliance (ex.: CPF faltante, divergência de área, ilegibilidade). Use 'Não identificado' para campos ausentes.\n\n" +
+                 "Regras: 'proprietarios' contém APENAS os titulares ATUAIS do imóvel (o dono anterior vai só na 'cadeiaDominial'). gravames traz apenas ônus reais registrados; se não houver, retorne lista vazia e declare 'livre de ônus' no parecer. alertas traz avisos de risco/compliance (ex.: CPF faltante, divergência de área, ilegibilidade). Use 'Não identificado' para campos ausentes.\n\n" +
                  "NOME DO ARQUIVO: " + name + "\n" +
                  "CONTEÚDO DA MATRÍCULA:\n" + textInput;
                   
@@ -1272,7 +1286,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         descricaoLegal: imovelSafe.descricaoLegal || "",
         confrontacoes: imovelSafe.confrontacoes || []
       },
-      proprietarios: parsedData.proprietarios || [],
+      proprietarios: apenasProprietariosAtuais(parsedData.proprietarios || []),
       gravames: parsedData.gravames || [],
       alertas: parsedData.alertas || [],
       cadeiaDominial: parsedData.cadeiaDominial || [],
