@@ -187,6 +187,7 @@ function getSystemConfig() {
     spreadsheetUrl: '',
     abaPrincipal: 'DB_IMPORTACOES',
     abaAlertas: 'RISCO_LOG',
+    driveFolderId: '',
     geminiKeyConfigured: keysCount > 0,
     geminiKeysCount: keysCount
   };
@@ -213,7 +214,8 @@ function salvarSystemConfig(config) {
   const systemConfig = {
     spreadsheetUrl: config.spreadsheetUrl || '',
     abaPrincipal: config.abaPrincipal || 'DB_IMPORTACOES',
-    abaAlertas: config.abaAlertas || 'RISCO_LOG'
+    abaAlertas: config.abaAlertas || 'RISCO_LOG',
+    driveFolderId: config.driveFolderId || ''
   };
   
   PropertiesService.getScriptProperties().setProperty(PROP_CONFIG, JSON.stringify(systemConfig));
@@ -901,6 +903,118 @@ function calcularCusto(usage) {
 }
 
 /**
+ * Persiste uma atualização de registro no banco local e re-sincroniza a planilha.
+ */
+function persistirAtualizacao(obj) {
+  const list = getBancoLocal();
+  let found = false;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i] && list[i].id === obj.id) { list[i] = obj; found = true; break; }
+  }
+  if (!found) list.unshift(obj);
+  salvarBancoLocal(list);
+  autoExportar(obj.id);
+}
+
+/**
+ * Salva o arquivo importado (PDF/imagem) numa pasta do Drive, renomeado com o ID do Lote.
+ * Retorna { id, url, nome } do arquivo criado.
+ */
+function salvarArquivoDrive(folderId, loteId, fileBase64, fileName, versao) {
+  const folder = DriveApp.getFolderById(folderId);
+  let mime = 'application/pdf';
+  let b64 = fileBase64;
+  if (fileBase64.indexOf('base64,') > -1) {
+    const partes = fileBase64.split('base64,');
+    const header = partes[0];
+    b64 = partes[1];
+    if (header.indexOf('image/png') > -1) mime = 'image/png';
+    else if (header.indexOf('image/jpeg') > -1 || header.indexOf('image/jpg') > -1) mime = 'image/jpeg';
+    else if (header.indexOf('application/pdf') > -1) mime = 'application/pdf';
+  } else {
+    const low = String(fileName || '').toLowerCase();
+    if (low.endsWith('.png')) mime = 'image/png';
+    else if (low.endsWith('.jpg') || low.endsWith('.jpeg')) mime = 'image/jpeg';
+  }
+  const ext = mime === 'image/png' ? 'png' : (mime === 'image/jpeg' ? 'jpg' : 'pdf');
+  // Nome com o ID do Lote; em reimportações acrescenta a versão para não sobrescrever
+  const nome = loteId + (versao && versao > 1 ? ('_v' + versao) : '') + '.' + ext;
+  const bytes = Utilities.base64Decode(b64);
+  const blob = Utilities.newBlob(bytes, mime, nome);
+  const file = folder.createFile(blob);
+  return { id: file.getId(), url: file.getUrl(), nome: nome };
+}
+
+/**
+ * Gera um relatório XLSX (Excel) dos registros, filtrando por período de importação.
+ * Colunas: Matrícula, Comarca, Área Total, Data Emissão Certidão, Proprietários, CPFs.
+ * dataInicio/dataFim: 'YYYY-MM-DD' (opcionais). Retorna { filename, mimeType, base64 }.
+ */
+function gerarRelatorioXLS(dataInicio, dataFim) {
+  exigirAdmin(); // Relatório fica na aba Configurações (restrita a admin)
+
+  const inicio = dataInicio ? new Date(dataInicio + 'T00:00:00') : null;
+  const fim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
+
+  const todas = listarAnalises();
+  const linhas = [['Matrícula', 'Comarca', 'Área Total', 'Data Emissão Certidão', 'Proprietários', 'CPFs']];
+
+  todas.forEach(function(a) {
+    if (!a) return;
+    let dt = null;
+    try { dt = a.timestamp ? new Date(a.timestamp) : null; } catch (e) { dt = null; }
+    if (inicio && dt && dt < inicio) return;
+    if (fim && dt && dt > fim) return;
+    if ((inicio || fim) && !dt) return; // sem data não entra em filtro por período
+
+    const imo = a.imovel || {};
+    const props = Array.isArray(a.proprietarios) ? a.proprietarios : [];
+    const nomes = props.map(function(p) { return (p && p.nome) ? p.nome : ''; }).filter(String).join('; ');
+    const docs = props.map(function(p) { return (p && p.documento) ? p.documento : ''; }).filter(String).join('; ');
+    linhas.push([
+      imo.matricula || '',
+      imo.comarca || '',
+      imo.area || '',
+      imo.dataEmissaoCertidao || '',
+      nomes,
+      docs
+    ]);
+  });
+
+  // Cria uma planilha temporária, escreve os dados e exporta como XLSX
+  const ss = SpreadsheetApp.create('Relatorio_Cresol_tmp_' + new Date().getTime());
+  const fileId = ss.getId();
+  try {
+    const sheet = ss.getSheets()[0];
+    sheet.setName('Relatório');
+    sheet.getRange(1, 1, linhas.length, 6).setValues(linhas);
+    const header = sheet.getRange(1, 1, 1, 6);
+    header.setBackground('#005c46').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    SpreadsheetApp.flush();
+
+    const url = 'https://docs.google.com/spreadsheets/d/' + fileId + '/export?format=xlsx';
+    const resp = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    const blob = resp.getBlob();
+    const base64 = Utilities.base64Encode(blob.getBytes());
+
+    const hoje = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return {
+      filename: 'Relatorio_Matriculas_' + hoje + '.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      base64: base64,
+      registros: linhas.length - 1
+    };
+  } finally {
+    // Remove a planilha temporária
+    try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
+  }
+}
+
+/**
  * Envia o documento para análise via API do Gemini
  */
 function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
@@ -1117,7 +1231,24 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
     finalResult.custo = calcularCusto(parsedRaw.usageMetadata);
 
     // Grava (ou mescla, se a matrícula já existir) no banco
-    return registrarOuMesclar(finalResult);
+    const resultado = registrarOuMesclar(finalResult);
+
+    // Salva o arquivo importado no Drive (renomeado com o ID do Lote), se configurado
+    if (fileBase64 && fileBase64.trim() !== "") {
+      try {
+        const cfg = getSystemConfig();
+        if (cfg.driveFolderId) {
+          const versao = Array.isArray(resultado.historico) ? resultado.historico.length : 1;
+          const info = salvarArquivoDrive(cfg.driveFolderId, resultado.id, fileBase64, name, versao);
+          resultado.arquivoDrive = info;
+          persistirAtualizacao(resultado); // grava o link do arquivo no registro
+        }
+      } catch (e) {
+        // Não interrompe a análise se o Drive falhar (ex.: pasta inválida ou sem permissão)
+      }
+    }
+
+    return resultado;
 
   } catch (err) {
     throw new Error("Falha ao se comunicar com o cérebro da Inteligência Artificial: " + err.toString());
