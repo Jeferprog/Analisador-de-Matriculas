@@ -1015,7 +1015,43 @@ function aptaPara(dataEmissao) {
   if (dataEmissao >= limGarantia) return 'garantia';
   if (dataEmissao >= limInvest) return 'investimento';
   if (dataEmissao >= limCusteio) return 'custeio';
-  return '';
+  return 'Vencida';
+}
+
+/**
+ * Agrupa os proprietários em unidades de titularidade: um CASAL (ambos "casado" e
+ * com o mesmo sobrenome) vira uma única unidade; os demais ficam em unidades separadas.
+ */
+function agruparUnidades(props) {
+  const ignorar = ['da', 'de', 'do', 'das', 'dos', 'e'];
+  function sobrenome(nome) {
+    const toks = String(nome || '').trim().split(/\s+/).filter(function(t) { return ignorar.indexOf(t.toLowerCase()) === -1; });
+    return toks.length ? toks[toks.length - 1].toLowerCase() : '';
+  }
+  function ehCasado(p) {
+    return String((p && p.estadoCivil) || '').toLowerCase().indexOf('casad') > -1;
+  }
+
+  const itens = (props || []).map(function(p) { return { p: p, usado: false }; });
+  const unidades = [];
+  for (let i = 0; i < itens.length; i++) {
+    if (itens[i].usado) continue;
+    itens[i].usado = true;
+    const membros = [itens[i].p];
+    if (ehCasado(itens[i].p)) {
+      const sa = sobrenome(itens[i].p.nome);
+      for (let j = i + 1; j < itens.length; j++) {
+        if (itens[j].usado) continue;
+        if (ehCasado(itens[j].p) && sa && sobrenome(itens[j].p.nome) === sa) {
+          itens[j].usado = true;
+          membros.push(itens[j].p);
+          break; // um casal = 2 pessoas
+        }
+      }
+    }
+    unidades.push({ membros: membros });
+  }
+  return unidades;
 }
 
 /**
@@ -1040,18 +1076,34 @@ function montarLinhasRelatorio(dataInicio, dataFim) {
 
     const imo = a.imovel || {};
     const props = Array.isArray(a.proprietarios) ? a.proprietarios : [];
-    const nomes = props.map(function(p) { return (p && p.nome) ? p.nome : ''; }).filter(String).join(' / ');
     const dataEmiss = parseDataEmissao(imo.dataEmissaoCertidao);
     const dataFmt = dataEmiss ? formatarDataBR(dataEmiss) : (imo.dataEmissaoCertidao || '');
+    const apta = aptaPara(dataEmiss);
 
-    linhas.push([
-      a.id || '',
-      imo.matricula || '',
-      nomes,
-      imo.area || '',
-      dataFmt,
-      aptaPara(dataEmiss)
-    ]);
+    // Agrupa por estado civil: casal (mesmo sobrenome) numa linha; demais separados
+    const unidades = agruparUnidades(props);
+
+    if (unidades.length === 0) {
+      linhas.push([a.id || '', imo.matricula || '', '', imo.area || '', dataFmt, apta]);
+    } else {
+      unidades.forEach(function(u) {
+        const nomes = u.membros.map(function(p) { return (p && p.nome) ? p.nome : ''; }).filter(String).join(' / ');
+
+        // Área da unidade: soma das partes dos membros (para casal, soma as frações)
+        const areasM2 = u.membros.map(function(p) { return extrairAreaM2(p && p.participacao); }).filter(function(v) { return v > 0; });
+        let areaTexto;
+        if (areasM2.length === 0) {
+          // Sem área explícita nas frações: se há uma só unidade, é 100% do imóvel
+          areaTexto = (unidades.length === 1) ? (imo.area || '') : u.membros.map(function(p) { return (p && p.participacao) || ''; }).filter(String).join(' + ');
+        } else {
+          const todosIguais = areasM2.every(function(v) { return v === areasM2[0]; });
+          const somaM2 = todosIguais ? areasM2[0] : areasM2.reduce(function(s, v) { return s + v; }, 0);
+          areaTexto = formatarAreaM2(somaM2);
+        }
+
+        linhas.push([a.id || '', imo.matricula || '', nomes, areaTexto, dataFmt, apta]);
+      });
+    }
   });
 
   return linhas;
