@@ -974,15 +974,61 @@ function extrairAreaTexto(texto) {
 }
 
 /**
- * Monta as linhas do relatório (uma linha por proprietário), filtrando por período de importação.
- * Colunas: Matrícula, Comarca, Área Total, Data Emissão Certidão, Nome do Titular, CPF/CNPJ, Fração Ideal (área).
+ * Interpreta a data de emissão (texto livre da IA) e retorna um Date, ou null.
+ * Aceita dd/mm/aaaa (com/sem hora), aaaa-mm-dd e "dd de <mês> de aaaa".
+ */
+function parseDataEmissao(texto) {
+  if (!texto) return null;
+  const s = String(texto).trim();
+  let m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+  m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  const meses = { 'janeiro': 0, 'fevereiro': 1, 'março': 2, 'marco': 2, 'abril': 3, 'maio': 4, 'junho': 5, 'julho': 6, 'agosto': 7, 'setembro': 8, 'outubro': 9, 'novembro': 10, 'dezembro': 11 };
+  m = s.toLowerCase().match(/(\d{1,2})\s+de\s+([a-zç]+)\s+de\s+(\d{4})/);
+  if (m && meses[m[2]] !== undefined) return new Date(parseInt(m[3], 10), meses[m[2]], parseInt(m[1], 10));
+  return null;
+}
+
+/**
+ * Formata um Date no padrão brasileiro dd/mm/aaaa.
+ */
+function formatarDataBR(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  const dd = ('0' + d.getDate()).slice(-2);
+  const mm = ('0' + (d.getMonth() + 1)).slice(-2);
+  return dd + '/' + mm + '/' + d.getFullYear();
+}
+
+/**
+ * Aptidão da certidão pela idade (emissão -> hoje):
+ * até 30 dias -> "garantia"; até 1 ano -> "investimento"; até 5 anos -> "custeio";
+ * acima de 5 anos (ou data ausente) -> vazio.
+ */
+function aptaPara(dataEmissao) {
+  if (!(dataEmissao instanceof Date) || isNaN(dataEmissao.getTime())) return '';
+  const hoje = new Date();
+  if (dataEmissao > hoje) return '';
+  const limGarantia = new Date(hoje.getTime()); limGarantia.setDate(limGarantia.getDate() - 30);
+  const limInvest = new Date(hoje.getFullYear() - 1, hoje.getMonth(), hoje.getDate());
+  const limCusteio = new Date(hoje.getFullYear() - 5, hoje.getMonth(), hoje.getDate());
+  if (dataEmissao >= limGarantia) return 'garantia';
+  if (dataEmissao >= limInvest) return 'investimento';
+  if (dataEmissao >= limCusteio) return 'custeio';
+  return '';
+}
+
+/**
+ * Monta as linhas do relatório (uma linha por matrícula), filtrando por período de importação.
+ * Colunas: ID do Lote, Nº Matrícula, Proprietários (nomes juntos), Área Total (soma das partes),
+ * Data Emissão Certidão (dd/mm/aaaa), Apta_para.
  */
 function montarLinhasRelatorio(dataInicio, dataFim) {
   const inicio = dataInicio ? new Date(dataInicio + 'T00:00:00') : null;
   const fim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
 
   const todas = listarAnalises();
-  const linhas = [['Matrícula', 'Comarca', 'Área Total', 'Data Emissão Certidão', 'Nome do Titular', 'CPF / CNPJ', 'Fração Ideal (área)']];
+  const linhas = [['ID do Lote', 'Nº Matrícula', 'Proprietários', 'Área Total', 'Data Emissão Certidão', 'Apta_para']];
 
   todas.forEach(function(a) {
     if (!a) return;
@@ -993,24 +1039,19 @@ function montarLinhasRelatorio(dataInicio, dataFim) {
     if ((inicio || fim) && !dt) return; // sem data não entra em filtro por período
 
     const imo = a.imovel || {};
-    const matricula = imo.matricula || '';
-    const comarca = imo.comarca || '';
-    const area = imo.area || '';
-    const dataEmissao = imo.dataEmissaoCertidao || '';
     const props = Array.isArray(a.proprietarios) ? a.proprietarios : [];
+    const nomes = props.map(function(p) { return (p && p.nome) ? p.nome : ''; }).filter(String).join(' / ');
+    const dataEmiss = parseDataEmissao(imo.dataEmissaoCertidao);
+    const dataFmt = dataEmiss ? formatarDataBR(dataEmiss) : (imo.dataEmissaoCertidao || '');
 
-    if (props.length === 0) {
-      linhas.push([matricula, comarca, area, dataEmissao, '', '', '']);
-    } else {
-      props.forEach(function(p) {
-        linhas.push([
-          matricula, comarca, area, dataEmissao,
-          (p && p.nome) || '',
-          (p && p.documento) || '',
-          extrairAreaTexto(p && p.participacao)
-        ]);
-      });
-    }
+    linhas.push([
+      a.id || '',
+      imo.matricula || '',
+      nomes,
+      imo.area || '',
+      dataFmt,
+      aptaPara(dataEmiss)
+    ]);
   });
 
   return linhas;
