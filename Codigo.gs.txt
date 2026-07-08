@@ -1064,7 +1064,7 @@ function montarLinhasRelatorio(dataInicio, dataFim) {
   const fim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
 
   const todas = listarAnalises();
-  const linhas = [['ID do Lote', 'Nº Matrícula', 'Proprietários', 'Área Total', 'Data Emissão Certidão', 'Apta_para']];
+  const linhas = [['id_lote', 'matricula', 'proprietarios', 'area_total', 'data_emissao_certidao', 'apta_para']];
 
   todas.forEach(function(a) {
     if (!a) return;
