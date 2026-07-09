@@ -583,26 +583,31 @@ function exportarParaSheets(analysisId) {
 }
 
 /**
- * Normaliza um texto para comparação (minúsculas, só alfanumérico).
+ * Normaliza um texto para comparação: remove acentos (á->a, í->i, ç->c),
+ * passa para minúsculas e mantém só alfanumérico.
  */
 function normalizarChave(s) {
-  return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(s == null ? '' : s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove diacríticos/acentos
+    .toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 /**
  * Verifica se duas análises se referem à MESMA matrícula.
- * Regra: mesmo número de matrícula E mesmo cartório (ou, na ausência de cartório,
- * mesma comarca). Matrículas de número igual em cartórios/cidades diferentes são
- * tratadas como imóveis DISTINTOS.
+ * Regra: mesmo número de matrícula E mesma COMARCA (jurisdição do registro).
+ * O texto do cartório varia muito entre leituras da IA, então não é usado como
+ * chave — a comarca é o disciminador confiável. Matrículas de número igual em
+ * comarcas diferentes são tratadas como imóveis DISTINTOS.
  */
 function mesmaMatricula(a, b) {
   const ia = a.imovel || {}, ib = b.imovel || {};
   const mA = normalizarChave(ia.matricula), mB = normalizarChave(ib.matricula);
   if (!mA || !mB || mA !== mB) return false;
-  const cartA = normalizarChave(ia.cartorio), cartB = normalizarChave(ib.cartorio);
-  if (cartA && cartB) return cartA === cartB;
   const comA = normalizarChave(ia.comarca), comB = normalizarChave(ib.comarca);
-  return !!(comA && comB && comA === comB);
+  if (comA && comB) return comA === comB;
+  // Sem comarca em algum dos lados: cai para o cartório como último recurso
+  const cartA = normalizarChave(ia.cartorio), cartB = normalizarChave(ib.cartorio);
+  return !!(cartA && cartB && cartA === cartB);
 }
 
 /**
