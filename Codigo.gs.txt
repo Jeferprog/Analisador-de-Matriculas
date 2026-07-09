@@ -611,7 +611,7 @@ function mesmaMatricula(a, b) {
 function valorVazio(v) {
   if (v == null || v === '') return true;
   const s = String(v).toLowerCase();
-  return s.indexOf('não identificad') > -1 || s === 'não avaliado' || s === 'não mensurada' || s === 'n/d';
+  return s.indexOf('não identificad') > -1 || s === 'não avaliado' || s === 'não mensurada' || s === 'n/d' || s === 'não localizado';
 }
 
 /**
@@ -857,6 +857,39 @@ function registrarOuMesclar(finalResult) {
   salvarBancoLocal(list);
   autoExportar(finalResult.id);
   return finalResult;
+}
+
+/**
+ * Consulta o CEP na internet (ViaCEP) a partir do endereço e da comarca.
+ * Usa a busca por UF/cidade/logradouro. Retorna o CEP ou '' se não localizar
+ * (comum em imóveis rurais, que muitas vezes usam o CEP geral do município).
+ */
+function buscarCepPorEndereco(endereco, comarca) {
+  try {
+    if (!endereco || !comarca) return '';
+    // Comarca no formato "Cidade - UF"
+    const m = String(comarca).match(/^(.*?)[\s]*[-\/][\s]*([A-Za-z]{2})\s*$/);
+    if (!m) return '';
+    const cidade = m[1].trim();
+    const uf = m[2].trim().toUpperCase();
+
+    // Logradouro: trecho antes da primeira vírgula, sem números
+    let logradouro = String(endereco).split(',')[0].trim();
+    logradouro = logradouro.replace(/\d+/g, '').trim();
+    if (logradouro.length < 3) return '';
+
+    const url = 'https://viacep.com.br/ws/' + encodeURIComponent(uf) + '/' +
+                encodeURIComponent(cidade) + '/' + encodeURIComponent(logradouro) + '/json/';
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return '';
+    const data = JSON.parse(resp.getContentText());
+    if (Array.isArray(data) && data.length > 0 && data[0].cep) {
+      return data[0].cep;
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
 }
 
 /**
@@ -1200,8 +1233,11 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "1. Extração registral: transcreva Matrícula, Ofício/Cartório e Comarca, tipo do imóvel (urbano/rural/gleba), endereço/localização, área total e área construída, Cadastro INCRA/CCIR quando rural, e a data/hora de emissão da certidão.\n" +
       "2. Auditoria lógica de área: quando houver desmembramentos, alienações parciais ou frações ideais, some as partes e confira se batem com a área remanescente; explique o cálculo. Reporte divergências como alerta. IMPORTANTE: a área total NUNCA deve ficar vazia — se o documento não trouxer o total de forma explícita, calcule-o somando as áreas das frações dos proprietários (imóvel de marido e esposa/coproprietários = 100% da área) e preencha o campo 'area'.\n" +
       "3. Qualificação subjetiva: identifique APENAS os PROPRIETÁRIOS ATUAIS (os titulares do domínio conforme o registro de aquisição MAIS RECENTE), com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Proprietários ANTERIORES (que já transmitiram o imóvel) NÃO entram em 'proprietarios' — eles pertencem exclusivamente à 'cadeiaDominial'. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
+      "3.1. Área por proprietário: para CADA proprietário atual, descreva de forma COMPLETA a área/fração que lhe pertence (campo 'descricaoArea'): quantidade (m² ou ha), localização dentro do imóvel quando delimitada (ex.: 'gleba ao norte, confrontando com...'), e origem da fração (registro que a constituiu).\n" +
+      "3.2. Validação da titularidade pelo DIREITO BRASILEIRO: para cada proprietário, identifique o REGIME DE BENS do casamento (comunhão universal — Lei 6.515/77 como marco; comunhão parcial, regime legal desde 1977; separação total/convencional ou obrigatória; participação final nos aquestos; ou união estável) e a FORMA DE AQUISIÇÃO (compra e venda, doação, herança/sucessão, partilha, adjudicação, usucapião, dação em pagamento, permuta, incorporação/integralização). Aplique as regras: na COMUNHÃO PARCIAL, bem adquirido ONEROSAMENTE na constância do casamento comunica-se ao cônjuge (meação), ainda que só um figure na matrícula — mas bens recebidos por HERANÇA ou DOAÇÃO não se comunicam; na COMUNHÃO UNIVERSAL, todos os bens se comunicam (salvo cláusula de incomunicabilidade); na SEPARAÇÃO TOTAL, não há meação. Registre a conclusão no campo 'validacaoTitularidade' de cada proprietário (ex.: 'Casado em comunhão parcial; imóvel adquirido onerosamente na constância — cônjuge detém meação e deverá anuir/outorgar na garantia — art. 1.647 CC'). Se a outorga conjugal for necessária para a garantia, gere também um alerta de ATENÇÃO.\n" +
       "4. Ônus e gravames: liste cada gravame ativo com o registro (R-/AV-), o tipo, o credor/beneficiário e observação/vencimento. Se estiver livre e desembaraçado, declare isso explicitamente.\n" +
-      "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n\n" +
+      "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n" +
+      "6. Identificadores: se a matrícula citar o CNM (Código Nacional de Matrícula, padrão do ONR/SREI, formato tipo NNNNNN.N.NNNNNNN-NN), transcreva-o no campo 'cnm'; se citar CEP do imóvel, transcreva-o no campo 'cep'. NÃO invente esses códigos se não constarem.\n\n" +
       "LEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF nativo, PDF digitalizado ou FOTOGRAFIA da matrícula (torta, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral, lendo todos os R- e AV- na ordem. NUNCA invente dados: se um campo estiver ilegível ou ausente, use 'Não identificado' e registre a ilegibilidade como alerta do tipo ATENÇÃO. Baseie-se estritamente no documento fornecido.";
 
     let prompt = "Faça a análise técnica jurídica profunda desta matrícula imobiliária (PDF, imagem ou transcrição) aplicando a metodologia de validação cruzada. Retorne ESTRITAMENTE um objeto JSON válido no formato abaixo, sem texto fora do JSON.\n\n" +
@@ -1218,6 +1254,8 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    \"risco\": \"string (Ex: 3.5/10)\",\n" +
                  "    \"rating\": \"string (AAA+ a D)\",\n" +
                  "    \"endereco\": \"string\",\n" +
+                 "    \"cep\": \"string (CEP do imóvel, SOMENTE se constar no documento; senão vazio)\",\n" +
+                 "    \"cnm\": \"string (Código Nacional de Matrícula - CNM/ONR, SOMENTE se citado na matrícula; senão vazio)\",\n" +
                  "    \"area\": \"string (área TOTAL do terreno/imóvel = 100%; se não houver total explícito, some as áreas das frações dos proprietários. Nunca deixe vazio)\",\n" +
                  "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
                  "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
@@ -1227,7 +1265,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    ]\n" +
                  "  },\n" +
                  "  \"proprietarios\": [\n" +
-                 "    { \"nome\": \"string (SOMENTE proprietários ATUAIS)\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"estadoCivil\": \"string\", \"status\": \"REGULAR|ATENÇÃO\" }\n" +
+                 "    { \"nome\": \"string (SOMENTE proprietários ATUAIS)\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"descricaoArea\": \"string (descrição COMPLETA da área/fração deste proprietário: quantidade, localização/delimitação dentro do imóvel e registro de origem)\", \"estadoCivil\": \"string\", \"regimeCasamento\": \"string (comunhão universal|comunhão parcial|separação total|separação obrigatória|participação final nos aquestos|união estável|não se aplica)\", \"formaAquisicao\": \"string (compra e venda|doação|herança|partilha|adjudicação|usucapião|dação em pagamento|permuta|outra)\", \"validacaoTitularidade\": \"string (conclusão jurídica: comunicação/meação do cônjuge conforme o regime e a forma de aquisição, necessidade de outorga conjugal - art. 1.647 CC)\", \"status\": \"REGULAR|ATENÇÃO\" }\n" +
                  "  ],\n" +
                  "  \"gravames\": [\n" +
                  "    { \"registro\": \"string (R-/AV-)\", \"tipo\": \"string\", \"credor\": \"string\", \"observacao\": \"string (vencimento/obs)\" }\n" +
@@ -1373,6 +1411,8 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         risco: imovelSafe.risco || "N/D",
         rating: imovelSafe.rating || "N/D",
         endereco: imovelSafe.endereco || "Não identificado",
+        cep: imovelSafe.cep || "",
+        cnm: imovelSafe.cnm || "",
         area: imovelSafe.area || "Não identificado",
         areaConstruida: imovelSafe.areaConstruida || "Não mensurada",
         descricaoCurta: imovelSafe.descricaoCurta || "Descrição não extraída do documento.",
@@ -1389,6 +1429,12 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
 
     // Custo real deste processamento (tokens reais reportados pela API + câmbio ao vivo)
     finalResult.custo = calcularCusto(parsedRaw.usageMetadata);
+
+    // CEP: se não constar no documento, consulta na internet (ViaCEP) pelo endereço/comarca
+    if (!finalResult.imovel.cep) {
+      const cepWeb = buscarCepPorEndereco(finalResult.imovel.endereco, finalResult.imovel.comarca);
+      finalResult.imovel.cep = cepWeb ? (cepWeb + ' (consultado)') : 'Não localizado';
+    }
 
     // Grava (ou mescla, se a matrícula já existir) no banco
     const resultado = registrarOuMesclar(finalResult);
