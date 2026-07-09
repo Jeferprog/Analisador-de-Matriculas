@@ -471,7 +471,10 @@
                       <th class="px-4 py-3">Nome do Titular</th>
                       <th class="px-4 py-3">CPF / CNPJ</th>
                       <th class="px-4 py-3">Fração Ideal</th>
+                      <th class="px-4 py-3 min-w-[220px]">Descrição da Área</th>
                       <th class="px-4 py-3">Estado Civil</th>
+                      <th class="px-4 py-3">Regime de Bens</th>
+                      <th class="px-4 py-3">Forma de Aquisição</th>
                       <th class="px-4 py-3">Situação Cadastral</th>
                     </tr>
                   </thead>
@@ -479,6 +482,17 @@
                     <!-- Dinâmico -->
                   </tbody>
                 </table>
+              </div>
+
+              <!-- Validação jurídica da titularidade (regime de bens x forma de aquisição) -->
+              <div id="validacao-titularidade-wrap" class="hidden">
+                <h4 class="font-bold text-sm text-primary-green uppercase mb-3 mt-6 flex items-center gap-2">
+                  <i data-lucide="scale" class="w-4.5 h-4.5 text-accent-orange"></i>
+                  Validação Jurídica da Titularidade
+                </h4>
+                <div id="validacao-titularidade-list" class="space-y-2">
+                  <!-- Dinâmico -->
+                </div>
               </div>
             </div>
 
@@ -543,6 +557,14 @@
                   <div>
                     <span class="text-xs text-text-gray uppercase font-bold">Endereço / Localização</span>
                     <p id="info-endereco" data-path="imovel.endereco" class="editable-field font-semibold text-text-dark"></p>
+                  </div>
+                  <div>
+                    <span class="text-xs text-text-gray uppercase font-bold">CEP</span>
+                    <p id="info-cep" data-path="imovel.cep" class="editable-field font-semibold text-text-dark"></p>
+                  </div>
+                  <div id="info-cnm-wrap" class="hidden">
+                    <span class="text-xs text-text-gray uppercase font-bold">CNM (Código Nacional de Matrícula)</span>
+                    <p id="info-cnm" data-path="imovel.cnm" class="editable-field font-semibold text-text-dark font-mono"></p>
                   </div>
                 </div>
               </div>
@@ -1204,13 +1226,34 @@
               <td class="px-4 py-3 font-semibold text-text-dark editable-field" data-path="proprietarios.${idx}.nome">${esc(p.nome || '—')}</td>
               <td class="px-4 py-3 font-mono editable-field" data-path="proprietarios.${idx}.documento">${esc(p.documento || 'Não informado')}</td>
               <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.participacao">${esc(p.participacao || '100%')}</td>
+              <td class="px-4 py-3 text-xs leading-relaxed editable-field min-w-[220px] whitespace-normal" data-path="proprietarios.${idx}.descricaoArea">${esc(p.descricaoArea || '—')}</td>
               <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.estadoCivil">${esc(p.estadoCivil || '—')}</td>
+              <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.regimeCasamento">${esc(p.regimeCasamento || '—')}</td>
+              <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.formaAquisicao">${esc(p.formaAquisicao || '—')}</td>
               <td class="px-4 py-3 font-bold ${sColor} editable-field" data-path="proprietarios.${idx}.status">${esc(p.status || '—')}</td>
             </tr>
           `;
         });
       } else {
-        pTbody.innerHTML = `<tr><td colspan="5" class="px-4 py-3 text-center text-text-gray">Nenhum proprietário listado.</td></tr>`;
+        pTbody.innerHTML = `<tr><td colspan="8" class="px-4 py-3 text-center text-text-gray">Nenhum proprietário listado.</td></tr>`;
+      }
+
+      // Validação jurídica da titularidade (por proprietário)
+      const valWrap = document.getElementById('validacao-titularidade-wrap');
+      const valList = document.getElementById('validacao-titularidade-list');
+      valList.innerHTML = '';
+      const comValidacao = (item.proprietarios || []).filter(p => p && p.validacaoTitularidade);
+      if (comValidacao.length > 0) {
+        comValidacao.forEach(p => {
+          valList.innerHTML += `
+            <div class="p-3 bg-primary-green/5 border border-primary-green/10 rounded-lg">
+              <p class="text-xs font-bold text-text-dark mb-0.5">${esc(p.nome || '')}</p>
+              <p class="text-xs text-text-dark leading-relaxed">${esc(p.validacaoTitularidade)}</p>
+            </div>`;
+        });
+        valWrap.classList.remove('hidden');
+      } else {
+        valWrap.classList.add('hidden');
       }
 
       // Tab: Imovel Info
@@ -1226,7 +1269,17 @@
       document.getElementById('info-area').innerText = imo.area || '—';
       document.getElementById('info-area-construida').innerText = imo.areaConstruida || '—';
       document.getElementById('info-endereco').innerText = imo.endereco || '—';
+      document.getElementById('info-cep').innerText = imo.cep || 'Não localizado';
       document.getElementById('info-descricao').innerText = imo.descricaoCurta || '—';
+
+      // CNM: só aparece quando citado na matrícula
+      const cnmWrap = document.getElementById('info-cnm-wrap');
+      if (imo.cnm) {
+        document.getElementById('info-cnm').innerText = imo.cnm;
+        cnmWrap.classList.remove('hidden');
+      } else {
+        cnmWrap.classList.add('hidden');
+      }
 
       // INCRA (só rural)
       const incraWrap = document.getElementById('info-incra-wrap');
