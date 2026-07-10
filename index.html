@@ -566,6 +566,10 @@
                     <span class="text-xs text-text-gray uppercase font-bold">CEP</span>
                     <p id="info-cep" data-path="imovel.cep" class="editable-field font-semibold text-text-dark"></p>
                   </div>
+                  <div id="info-cns-wrap" class="hidden">
+                    <span class="text-xs text-text-gray uppercase font-bold">CNS do Cartório (Serventia)</span>
+                    <p id="info-cns" data-path="imovel.cns" class="editable-field font-semibold text-text-dark font-mono"></p>
+                  </div>
                   <div id="info-cnm-wrap" class="hidden">
                     <span class="text-xs text-text-gray uppercase font-bold">CNM (Código Nacional de Matrícula)</span>
                     <p id="info-cnm" data-path="imovel.cnm" class="editable-field font-semibold text-text-dark font-mono"></p>
@@ -1283,6 +1287,15 @@
       document.getElementById('info-endereco').innerText = imo.endereco || '—';
       document.getElementById('info-cep').innerText = imo.cep || 'Não localizado';
       document.getElementById('info-descricao').innerText = imo.descricaoCurta || '—';
+
+      // CNS do cartório: aparece quando extraído/derivado/consultado na base
+      const cnsWrap = document.getElementById('info-cns-wrap');
+      if (imo.cns) {
+        document.getElementById('info-cns').innerText = imo.cns;
+        cnsWrap.classList.remove('hidden');
+      } else {
+        cnsWrap.classList.add('hidden');
+      }
 
       // CNM: só aparece quando citado na matrícula
       const cnmWrap = document.getElementById('info-cnm-wrap');

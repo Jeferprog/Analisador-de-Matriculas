@@ -924,6 +924,89 @@ function validarCepMunicipio(cep, comarca) {
 }
 
 /**
+ * Consulta o CNS (Código Nacional da Serventia) do cartório na aba
+ * "CNS Cartório Base BRDE" da planilha, quando não constar na matrícula.
+ * Casa por Comarca + UF; se houver mais de uma serventia na comarca, tenta
+ * desambiguar pelo nome do cartório (NM_OFICIAL/NM_FANTASIA). Considera ST_ATIVO.
+ * Retorna o NR_CNS ou '' se não localizar/for ambíguo.
+ */
+function buscarCnsCartorio(cartorio, comarca) {
+  try {
+    const config = getSystemConfig();
+    if (!config.spreadsheetUrl) return '';
+    const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+
+    // Localiza a aba de forma tolerante (nome pode variar em acentos/caixa)
+    let sheet = null;
+    const abas = ss.getSheets();
+    for (let s = 0; s < abas.length; s++) {
+      const nomeNorm = normalizarChave(abas[s].getName());
+      if (nomeNorm.indexOf('cns') > -1 && nomeNorm.indexOf('brde') > -1) { sheet = abas[s]; break; }
+    }
+    if (!sheet) return '';
+
+    const rows = sheet.getDataRange().getValues();
+    if (rows.length < 2) return '';
+
+    // Mapeia colunas pelo cabeçalho
+    const header = rows[0].map(function(h) { return String(h).trim().toUpperCase(); });
+    const iCns = header.indexOf('NR_CNS');
+    const iOficial = header.indexOf('NM_OFICIAL');
+    const iFantasia = header.indexOf('NM_FANTASIA');
+    const iComarca = header.indexOf('NM_COMARCA');
+    const iUf = header.indexOf('SG_UF');
+    const iAtivo = header.indexOf('ST_ATIVO');
+    if (iCns === -1) return '';
+
+    // Comarca "Cidade - UF"
+    const mm = String(comarca || '').match(/^(.*?)[\s]*[-\/][\s]*([A-Za-z]{2})\s*$/);
+    const cidadeNorm = mm ? normalizarChave(mm[1]) : normalizarChave(comarca);
+    const ufNorm = mm ? mm[2].toUpperCase() : '';
+    const cartNorm = normalizarChave(cartorio);
+
+    const candidatos = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const cns = String(r[iCns] || '').trim();
+      if (!cns) continue;
+      if (iAtivo > -1) {
+        const at = String(r[iAtivo] || '').trim().toUpperCase();
+        if (at === 'N' || at === '0' || at === 'NAO' || at === 'NÃO' || at === 'INATIVO' || at === 'FALSE') continue;
+      }
+      const cComarca = iComarca > -1 ? normalizarChave(r[iComarca]) : '';
+      const cUf = iUf > -1 ? String(r[iUf] || '').trim().toUpperCase() : '';
+      if (cidadeNorm && cComarca && cComarca !== cidadeNorm) continue;
+      if (ufNorm && cUf && cUf !== ufNorm) continue;
+      candidatos.push({
+        cns: cns,
+        oficial: iOficial > -1 ? String(r[iOficial] || '') : '',
+        fantasia: iFantasia > -1 ? String(r[iFantasia] || '') : ''
+      });
+    }
+
+    if (candidatos.length === 0) return '';
+    if (candidatos.length === 1) return candidatos[0].cns;
+
+    // Múltiplas serventias na comarca: desambigua pelo nome do cartório
+    let melhor = null, melhorScore = 0;
+    const ordCart = (cartNorm.match(/\d+/) || [])[0];
+    candidatos.forEach(function(c) {
+      const ofNorm = normalizarChave(c.oficial);
+      const faNorm = normalizarChave(c.fantasia);
+      let score = 0;
+      const ordCand = ((ofNorm + faNorm).match(/\d+/) || [])[0];
+      if (ordCart && ordCand && ordCart === ordCand) score += 5; // mesmo 1º/2º/3º ofício
+      if (cartNorm && ofNorm && cartNorm.indexOf(ofNorm) > -1) score += 3;
+      if (cartNorm && faNorm && cartNorm.indexOf(faNorm) > -1) score += 3;
+      if (score > melhorScore) { melhorScore = score; melhor = c; }
+    });
+    return (melhor && melhorScore > 0) ? melhor.cns : ''; // ambíguo demais: não arrisca
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
  * Cotação USD->BRL ao vivo (AwesomeAPI), com cache de 12h e fallback.
  */
 function obterCambioUsdBrl() {
@@ -1275,7 +1358,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "- Georreferenciamento (GEO): identifique se há averbação (AV) de Georreferenciamento certificado pelo SIGEF/INCRA. Para imóveis rurais SEM GEO averbado, insira um alerta do tipo ATENÇÃO de pendência documental, pois o registro da garantia real hoje exige a descrição georreferenciada regularizada previamente.\n" +
       "- Benfeitorias Fantasmas: se a matrícula descrever o imóvel apenas como 'terreno', 'fração de terras' ou 'lote', sem nenhuma menção a prédios, casas, galpões ou silos, preencha o campo 'areaConstruida' estritamente como 'Não averbada (Terreno Nu)' e gere um alerta do tipo ATENÇÃO indicando a necessidade de averbação futura das benfeitorias existentes in loco.\n" +
       "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n" +
-      "6. Identificadores: se a matrícula citar o CNM (Código Nacional de Matrícula, padrão do ONR/SREI, formato tipo NNNNNN.N.NNNNNNN-NN), transcreva-o no campo 'cnm'; se citar CEP do imóvel, transcreva-o no campo 'cep'. NÃO invente CNM nem CEP específico se não constarem. Adicionalmente, preencha 'cepMunicipio' com o CEP GERAL do município (a localidade/sede, conforme os Correios) — este servirá de referência quando o CEP específico do imóvel não constar.\n\n" +
+      "6. Identificadores: se a matrícula citar o CNM (Código Nacional de Matrícula, padrão do ONR/SREI, formato tipo NNNNNN.N.NNNNNNN-NN), transcreva-o no campo 'cnm'; se citar o CNS (Código Nacional da Serventia — os 6 dígitos que identificam o cartório, frequentemente a parte inicial do CNM antes do primeiro ponto), transcreva-o no campo 'cns'; se citar CEP do imóvel, transcreva-o no campo 'cep'. NÃO invente CNM, CNS nem CEP específico se não constarem. Adicionalmente, preencha 'cepMunicipio' com o CEP GERAL do município (a localidade/sede, conforme os Correios) — este servirá de referência quando o CEP específico do imóvel não constar.\n\n" +
       "LEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF nativo, PDF digitalizado ou FOTOGRAFIA da matrícula (torta, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral, lendo todos os R- e AV- na ordem. NUNCA invente dados: se um campo estiver ilegível ou ausente, use 'Não identificado' e registre a ilegibilidade como alerta do tipo ATENÇÃO. Baseie-se estritamente no documento fornecido.";
 
     let prompt = "Faça a análise técnica jurídica profunda desta matrícula imobiliária (PDF, imagem ou transcrição) aplicando a metodologia de validação cruzada. Retorne ESTRITAMENTE um objeto JSON válido no formato abaixo, sem texto fora do JSON.\n\n" +
@@ -1296,6 +1379,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    \"cep\": \"string (CEP do imóvel, SOMENTE se constar no documento; senão vazio)\",\n" +
                  "    \"cepMunicipio\": \"string (CEP geral do município/sede, conforme os Correios; referência para quando o CEP específico não constar)\",\n" +
                  "    \"cnm\": \"string (Código Nacional de Matrícula - CNM/ONR, SOMENTE se citado na matrícula; senão vazio)\",\n" +
+                 "    \"cns\": \"string (Código Nacional da Serventia/CNS do cartório - normalmente 6 dígitos; SOMENTE se citado; senão vazio)\",\n" +
                  "    \"area\": \"string (área TOTAL do terreno/imóvel = 100%; se não houver total explícito, some as áreas das frações dos proprietários. Nunca deixe vazio)\",\n" +
                  "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
                  "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
@@ -1455,6 +1539,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         cep: imovelSafe.cep || "",
         cepMunicipio: imovelSafe.cepMunicipio || "",
         cnm: imovelSafe.cnm || "",
+        cns: imovelSafe.cns || "",
         area: imovelSafe.area || "Não identificado",
         areaConstruida: imovelSafe.areaConstruida || "Não mensurada",
         descricaoCurta: imovelSafe.descricaoCurta || "Descrição não extraída do documento.",
@@ -1481,6 +1566,22 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         if (cepMun) { cepFinal = cepMun; fonte = 'CEP geral do município'; }
       }
       finalResult.imovel.cep = cepFinal ? (cepFinal + ' (' + fonte + ')') : 'Não localizado';
+    }
+
+    // CNS do cartório: (1) do documento; (2) derivado do CNM (6 dígitos iniciais);
+    // (3) consulta na aba "CNS Cartório Base BRDE" por comarca/UF.
+    if (!finalResult.imovel.cns) {
+      let cnsFinal = '';
+      // Deriva do CNM (formato CNS.1.MATRICULA-DV): pega o primeiro grupo de dígitos
+      const cnm = String(finalResult.imovel.cnm || '');
+      const cnmMatch = cnm.match(/(\d{6})/);
+      if (cnmMatch) cnsFinal = cnmMatch[1];
+      if (cnsFinal) {
+        finalResult.imovel.cns = cnsFinal + ' (do CNM)';
+      } else {
+        const cnsBase = buscarCnsCartorio(finalResult.imovel.cartorio, finalResult.imovel.comarca);
+        finalResult.imovel.cns = cnsBase ? (cnsBase + ' (base BRDE)') : '';
+      }
     }
 
     // Grava (ou mescla, se a matrícula já existir) no banco
