@@ -924,83 +924,117 @@ function validarCepMunicipio(cep, comarca) {
 }
 
 /**
- * Consulta o CNS (Código Nacional da Serventia) do cartório na aba
- * "CNS Cartório Base BRDE" da planilha, quando não constar na matrícula.
- * Casa por Comarca + UF; se houver mais de uma serventia na comarca, tenta
- * desambiguar pelo nome do cartório (NM_OFICIAL/NM_FANTASIA). Considera ST_ATIVO.
- * Retorna o NR_CNS ou '' se não localizar/for ambíguo.
+ * Normaliza o texto de um cabeçalho de coluna (maiúsculas, sem acento, só alfanumérico).
  */
-function buscarCnsCartorio(cartorio, comarca) {
+function normalizarHeader(h) {
+  return String(h == null ? '' : h).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Acha o índice da coluna cujo cabeçalho contém qualquer uma das chaves (já normalizadas).
+ */
+function acharColuna(headerNorm, chaves) {
+  for (let c = 0; c < chaves.length; c++) {
+    for (let i = 0; i < headerNorm.length; i++) {
+      if (headerNorm[i].indexOf(chaves[c]) > -1) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Extrai a(s) cidade(s) candidata(s) para casar o município: prioriza a cidade da
+ * comarca e, como reforço, a cidade ao final do endereço (antes de "/UF").
+ */
+function municipiosCandidatos(endereco, comarca) {
+  const lista = [];
+  const add = function(nome) { const n = normalizarChave(nome); if (n && lista.indexOf(n) === -1) lista.push(n); };
+  const mc = String(comarca || '').match(/^(.*?)[\s]*[-\/][\s]*[A-Za-z]{2}\s*$/);
+  if (mc) add(mc[1]);
+  let e = String(endereco || '').trim();
+  const ufm = e.match(/[\/\-–—]\s*([A-Za-z]{2})\s*$/);
+  if (ufm) {
+    e = e.slice(0, ufm.index);
+    const partes = e.split(/[,–—\/]/);
+    if (partes.length) add(partes[partes.length - 1]);
+  }
+  return lista;
+}
+
+/**
+ * Consulta o CNS (Código Nacional da Serventia) do cartório na aba de base BRDE
+ * (cabeçalho: CNS, Status, Nome_Cartorio, Endereco, Municipio, UF — também aceita o
+ * layout antigo NR_CNS/NM_OFICIAL/NM_COMARCA/SG_UF/ST_ATIVO).
+ * Casa por Município (comarca; senão a cidade do endereço) + UF, prefere o cartório
+ * de Registro de Imóveis e desambigua pelo nome/ordinal. Retorna o CNS ou ''.
+ */
+function buscarCnsCartorio(cartorio, comarca, endereco) {
   try {
     const config = getSystemConfig();
     if (!config.spreadsheetUrl) return '';
     const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
 
-    // Localiza a aba de forma tolerante (nome pode variar em acentos/caixa)
+    // Localiza a aba de forma tolerante (contém "cns" no nome)
     let sheet = null;
     const abas = ss.getSheets();
     for (let s = 0; s < abas.length; s++) {
-      const nomeNorm = normalizarChave(abas[s].getName());
-      if (nomeNorm.indexOf('cns') > -1 && nomeNorm.indexOf('brde') > -1) { sheet = abas[s]; break; }
+      if (normalizarChave(abas[s].getName()).indexOf('cns') > -1) { sheet = abas[s]; break; }
     }
     if (!sheet) return '';
 
     const rows = sheet.getDataRange().getValues();
     if (rows.length < 2) return '';
 
-    // Mapeia colunas pelo cabeçalho
-    const header = rows[0].map(function(h) { return String(h).trim().toUpperCase(); });
-    const iCns = header.indexOf('NR_CNS');
-    const iOficial = header.indexOf('NM_OFICIAL');
-    const iFantasia = header.indexOf('NM_FANTASIA');
-    const iComarca = header.indexOf('NM_COMARCA');
-    const iUf = header.indexOf('SG_UF');
-    const iAtivo = header.indexOf('ST_ATIVO');
-    if (iCns === -1) return '';
+    const headerNorm = rows[0].map(normalizarHeader);
+    const iCns = acharColuna(headerNorm, ['CNS']);
+    const iStatus = acharColuna(headerNorm, ['STATUS', 'STATIVO', 'ATIVO']);
+    const iNome = acharColuna(headerNorm, ['NOMECARTORIO', 'NMOFICIAL', 'NOME', 'OFICIAL', 'FANTASIA']);
+    const iMun = acharColuna(headerNorm, ['MUNICIPIO', 'NMCOMARCA', 'COMARCA', 'CIDADE']);
+    const iUf = acharColuna(headerNorm, ['UF']);
+    if (iCns === -1 || iMun === -1) return '';
 
-    // Comarca "Cidade - UF"
-    const mm = String(comarca || '').match(/^(.*?)[\s]*[-\/][\s]*([A-Za-z]{2})\s*$/);
-    const cidadeNorm = mm ? normalizarChave(mm[1]) : normalizarChave(comarca);
-    const ufNorm = mm ? mm[2].toUpperCase() : '';
+    const cidades = municipiosCandidatos(endereco, comarca);
+    if (cidades.length === 0) return '';
+    const mc = String(comarca || '').match(/[-\/]\s*([A-Za-z]{2})\s*$/);
+    const em = String(endereco || '').match(/[\/\-–—]\s*([A-Za-z]{2})\s*$/);
+    const ufAlvo = (mc ? mc[1] : (em ? em[1] : '')).toUpperCase();
     const cartNorm = normalizarChave(cartorio);
-
-    const candidatos = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      const cns = String(r[iCns] || '').trim();
-      if (!cns) continue;
-      if (iAtivo > -1) {
-        const at = String(r[iAtivo] || '').trim().toUpperCase();
-        if (at === 'N' || at === '0' || at === 'NAO' || at === 'NÃO' || at === 'INATIVO' || at === 'FALSE') continue;
-      }
-      const cComarca = iComarca > -1 ? normalizarChave(r[iComarca]) : '';
-      const cUf = iUf > -1 ? String(r[iUf] || '').trim().toUpperCase() : '';
-      if (cidadeNorm && cComarca && cComarca !== cidadeNorm) continue;
-      if (ufNorm && cUf && cUf !== ufNorm) continue;
-      candidatos.push({
-        cns: cns,
-        oficial: iOficial > -1 ? String(r[iOficial] || '') : '',
-        fantasia: iFantasia > -1 ? String(r[iFantasia] || '') : ''
-      });
-    }
-
-    if (candidatos.length === 0) return '';
-    if (candidatos.length === 1) return candidatos[0].cns;
-
-    // Múltiplas serventias na comarca: desambigua pelo nome do cartório
-    let melhor = null, melhorScore = 0;
     const ordCart = (cartNorm.match(/\d+/) || [])[0];
+
+    // Coleta candidatos para uma cidade específica
+    const coletar = function(cidadeNorm) {
+      const out = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        const cns = String(r[iCns] || '').trim();
+        if (!cns) continue;
+        if (iStatus > -1 && normalizarChave(r[iStatus]).indexOf('inativ') > -1) continue; // pula inativos
+        if (normalizarChave(r[iMun]) !== cidadeNorm) continue;
+        if (iUf > -1 && ufAlvo && String(r[iUf] || '').trim().toUpperCase() !== ufAlvo) continue;
+        out.push({ cns: cns, nome: iNome > -1 ? String(r[iNome] || '') : '' });
+      }
+      return out;
+    };
+
+    // Prioriza a cidade da comarca; se nada, tenta a do endereço
+    let candidatos = [];
+    for (let ci = 0; ci < cidades.length && candidatos.length === 0; ci++) {
+      candidatos = coletar(cidades[ci]);
+    }
+    if (candidatos.length === 0) return '';
+
+    // Pontua: prefere Registro de Imóveis e casa nome/ordinal do cartório da matrícula
+    let melhor = candidatos[0], melhorScore = -1;
     candidatos.forEach(function(c) {
-      const ofNorm = normalizarChave(c.oficial);
-      const faNorm = normalizarChave(c.fantasia);
+      const nomeNorm = normalizarChave(c.nome);
       let score = 0;
-      const ordCand = ((ofNorm + faNorm).match(/\d+/) || [])[0];
-      if (ordCart && ordCand && ordCart === ordCand) score += 5; // mesmo 1º/2º/3º ofício
-      if (cartNorm && ofNorm && cartNorm.indexOf(ofNorm) > -1) score += 3;
-      if (cartNorm && faNorm && cartNorm.indexOf(faNorm) > -1) score += 3;
+      if (nomeNorm.indexOf('imoveis') > -1 || nomeNorm.indexOf('registrospublicos') > -1) score += 4; // é RI
+      const ordCand = (nomeNorm.match(/\d+/) || [])[0];
+      if (ordCart && ordCand && ordCart === ordCand) score += 3;
+      if (cartNorm && nomeNorm && cartNorm.indexOf(nomeNorm) > -1) score += 2;
       if (score > melhorScore) { melhorScore = score; melhor = c; }
     });
-    return (melhor && melhorScore > 0) ? melhor.cns : ''; // ambíguo demais: não arrisca
+    return melhor ? melhor.cns : '';
   } catch (e) {
     return '';
   }
@@ -1579,7 +1613,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       if (cnsFinal) {
         finalResult.imovel.cns = cnsFinal + ' (do CNM)';
       } else {
-        const cnsBase = buscarCnsCartorio(finalResult.imovel.cartorio, finalResult.imovel.comarca);
+        const cnsBase = buscarCnsCartorio(finalResult.imovel.cartorio, finalResult.imovel.comarca, finalResult.imovel.endereco);
         finalResult.imovel.cns = cnsBase ? (cnsBase + ' (base BRDE)') : '';
       }
     }
