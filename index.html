@@ -709,8 +709,9 @@
             </div>
             <form id="sheets-config-form" onsubmit="saveSheetsConfig(event)" class="p-6 space-y-4">
               <div>
-                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">URL da Planilha de Destino</label>
-                <input type="text" id="config-spreadsheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">URL (ou ID) da Planilha de Destino</label>
+                <input type="text" id="config-spreadsheet-url" placeholder="https://docs.google.com/spreadsheets/d/<ID>/edit — ou cole só o ID" class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">Aceita a URL completa ou apenas o ID da planilha.</p>
               </div>
 
               <div class="grid grid-cols-2 gap-4">

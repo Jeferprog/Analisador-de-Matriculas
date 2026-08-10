@@ -237,10 +237,27 @@ function salvarSystemConfig(config) {
 }
 
 /**
+ * Abre uma planilha aceitando tanto a URL completa quanto o ID puro do arquivo.
+ * Evita o erro "Argumento inválido: url" quando o usuário cola só o ID.
+ */
+function abrirPlanilha(urlOrId) {
+  const s = String(urlOrId == null ? '' : urlOrId).trim();
+  if (!s) throw new Error('Planilha de destino não configurada.');
+  // Extrai o ID de uma URL (/d/<ID>) ou aceita um ID puro (25+ caracteres válidos)
+  let id = '';
+  const mUrl = s.match(/\/d\/([-\w]{25,})/);
+  if (mUrl) id = mUrl[1];
+  else if (/^[-\w]{25,}$/.test(s)) id = s;
+  if (id) return SpreadsheetApp.openById(id);
+  // Último recurso: tenta como URL (lança erro claro se for inválida)
+  return SpreadsheetApp.openByUrl(s);
+}
+
+/**
  * Inicializa os cabeçalhos das planilhas de destino caso não existam
  */
 function inicializarPlanilha(url, abaPrincipalName, abaAlertasName) {
-  const ss = SpreadsheetApp.openByUrl(url);
+  const ss = abrirPlanilha(url);
   
   // 1. Inicializa Aba Principal
   let sheetPrincipal = ss.getSheetByName(abaPrincipalName);
@@ -347,7 +364,7 @@ function listarAnalises() {
   
   if (config.spreadsheetUrl) {
     try {
-      const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+      const ss = abrirPlanilha(config.spreadsheetUrl);
       const sheet = ss.getSheetByName(config.abaPrincipal);
       if (sheet) {
         const rows = sheet.getDataRange().getValues();
@@ -466,7 +483,7 @@ function deletarAnalise(id) {
   const config = getSystemConfig();
   if (config.spreadsheetUrl) {
     try {
-      const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+      const ss = abrirPlanilha(config.spreadsheetUrl);
       const sheet = ss.getSheetByName(config.abaPrincipal);
       if (sheet) {
         const rows = sheet.getDataRange().getValues();
@@ -503,7 +520,7 @@ function exportarParaSheets(analysisId) {
   }
   
   try {
-    const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+    const ss = abrirPlanilha(config.spreadsheetUrl);
     
     // Assegura cabeçalhos
     inicializarPlanilha(config.spreadsheetUrl, config.abaPrincipal, config.abaAlertas);
@@ -972,7 +989,7 @@ function buscarCnsCartorio(cartorio, comarca, endereco) {
   try {
     const config = getSystemConfig();
     if (!config.spreadsheetUrl) return '';
-    const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+    const ss = abrirPlanilha(config.spreadsheetUrl);
 
     // Localiza a aba de forma tolerante (contém "cns" no nome)
     let sheet = null;
