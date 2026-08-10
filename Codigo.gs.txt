@@ -16,7 +16,8 @@ const CAMBIO_FALLBACK = 5.40;      // usado se a cotação ao vivo falhar
 
 // Controle de acesso por perfil (baseado no e-mail logado)
 const PROP_ADMINS = 'CRESOL_ADMINS_JSON';
-const ADMIN_INICIAL = 'jeferson.deimling@cresolsicoper.com.br';
+const ADMIN_INICIAL = 'cooperar.comite@cresolsicoper.com.br';
+const ABA_ADMINS = 'ADMINS'; // aba da planilha onde os admins ficam salvos (base durável)
 
 /**
  * E-mail do usuário logado (domínio Cresol), em minúsculas. Vazio se não for possível identificar.
@@ -33,17 +34,48 @@ function getUsuarioAtual() {
 /**
  * Lista de e-mails administradores. Garante o admin inicial sempre presente.
  */
+function getAbaAdmins(ss) {
+  let sheet = ss.getSheetByName(ABA_ADMINS);
+  if (!sheet) {
+    sheet = ss.insertSheet(ABA_ADMINS);
+    sheet.appendRow(['email']);
+    sheet.appendRow([ADMIN_INICIAL]);
+  }
+  return sheet;
+}
+
 function getAdmins() {
+  const inicial = ADMIN_INICIAL.toLowerCase();
+  const config = getSystemConfig();
+
+  // Preferência: aba ADMINS da planilha (base durável, sobrevive a troca de conta)
+  if (config.spreadsheetUrl) {
+    try {
+      const ss = abrirPlanilha(config.spreadsheetUrl);
+      const sheet = getAbaAdmins(ss);
+      const rows = sheet.getDataRange().getValues();
+      const lista = [];
+      for (let i = 1; i < rows.length; i++) {
+        const e = String(rows[i][0] || '').trim();
+        if (e && lista.map(function(x) { return x.toLowerCase(); }).indexOf(e.toLowerCase()) === -1) lista.push(e);
+      }
+      if (!lista.some(function(e) { return e.toLowerCase() === inicial; })) {
+        sheet.appendRow([ADMIN_INICIAL]);
+        lista.unshift(ADMIN_INICIAL);
+      }
+      return lista;
+    } catch (e) {
+      // Falhou na planilha: cai no fallback de ScriptProperties
+    }
+  }
+
+  // Fallback: ScriptProperties (sem planilha configurada)
   const props = PropertiesService.getScriptProperties();
   let lista = [];
   const raw = props.getProperty(PROP_ADMINS);
-  if (raw) {
-    try { lista = JSON.parse(raw); } catch (e) { lista = []; }
-  }
+  if (raw) { try { lista = JSON.parse(raw); } catch (e) { lista = []; } }
   if (!Array.isArray(lista)) lista = [];
-  const inicial = ADMIN_INICIAL.toLowerCase();
-  const jaTem = lista.some(function(e) { return String(e).trim().toLowerCase() === inicial; });
-  if (!jaTem) {
+  if (!lista.some(function(e) { return String(e).trim().toLowerCase() === inicial; })) {
     lista.unshift(ADMIN_INICIAL);
     props.setProperty(PROP_ADMINS, JSON.stringify(lista));
   }
@@ -94,12 +126,22 @@ function adicionarAdmin(email) {
   exigirAdmin();
   const e = String(email || '').trim().toLowerCase();
   if (!e || e.indexOf('@') === -1) throw new Error('E-mail inválido.');
-  const lista = getAdmins();
-  if (!lista.some(function(x) { return String(x).trim().toLowerCase() === e; })) {
-    lista.push(e);
-    PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
+  if (getAdmins().some(function(x) { return String(x).trim().toLowerCase() === e; })) {
+    return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' já estava cadastrado.' };
   }
-  return { success: true, admins: lista, message: 'Administrador ' + e + ' cadastrado com sucesso.' };
+  const config = getSystemConfig();
+  if (config.spreadsheetUrl) {
+    const ss = abrirPlanilha(config.spreadsheetUrl);
+    getAbaAdmins(ss).appendRow([e]);
+  } else {
+    const props = PropertiesService.getScriptProperties();
+    let lista = [];
+    try { lista = JSON.parse(props.getProperty(PROP_ADMINS)) || []; } catch (x) { lista = []; }
+    if (!Array.isArray(lista)) lista = [];
+    lista.push(e);
+    props.setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' cadastrado com sucesso.' };
 }
 
 /**
@@ -111,9 +153,23 @@ function removerAdmin(email) {
   if (e === ADMIN_INICIAL.toLowerCase()) {
     throw new Error('O administrador principal não pode ser removido.');
   }
-  const lista = getAdmins().filter(function(x) { return String(x).trim().toLowerCase() !== e; });
-  PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
-  return { success: true, admins: lista, message: 'Administrador ' + e + ' removido.' };
+  const config = getSystemConfig();
+  if (config.spreadsheetUrl) {
+    const ss = abrirPlanilha(config.spreadsheetUrl);
+    const sheet = getAbaAdmins(ss);
+    const rows = sheet.getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][0] || '').trim().toLowerCase() === e) sheet.deleteRow(i + 1);
+    }
+  } else {
+    const props = PropertiesService.getScriptProperties();
+    let lista = [];
+    try { lista = JSON.parse(props.getProperty(PROP_ADMINS)) || []; } catch (x) { lista = []; }
+    if (!Array.isArray(lista)) lista = [];
+    lista = lista.filter(function(x) { return String(x).trim().toLowerCase() !== e; });
+    props.setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' removido.' };
 }
 
 /**
