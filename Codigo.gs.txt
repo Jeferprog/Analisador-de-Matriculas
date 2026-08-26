@@ -16,7 +16,8 @@ const CAMBIO_FALLBACK = 5.40;      // usado se a cotação ao vivo falhar
 
 // Controle de acesso por perfil (baseado no e-mail logado)
 const PROP_ADMINS = 'CRESOL_ADMINS_JSON';
-const ADMIN_INICIAL = 'jeferson.deimling@cresolsicoper.com.br';
+const ADMIN_INICIAL = 'cooperar.comite@cresolsicoper.com.br';
+const ABA_ADMINS = 'ADMINS'; // aba da planilha onde os admins ficam salvos (base durável)
 
 /**
  * E-mail do usuário logado (domínio Cresol), em minúsculas. Vazio se não for possível identificar.
@@ -33,17 +34,48 @@ function getUsuarioAtual() {
 /**
  * Lista de e-mails administradores. Garante o admin inicial sempre presente.
  */
+function getAbaAdmins(ss) {
+  let sheet = ss.getSheetByName(ABA_ADMINS);
+  if (!sheet) {
+    sheet = ss.insertSheet(ABA_ADMINS);
+    sheet.appendRow(['email']);
+    sheet.appendRow([ADMIN_INICIAL]);
+  }
+  return sheet;
+}
+
 function getAdmins() {
+  const inicial = ADMIN_INICIAL.toLowerCase();
+  const config = getSystemConfig();
+
+  // Preferência: aba ADMINS da planilha (base durável, sobrevive a troca de conta)
+  if (config.spreadsheetUrl) {
+    try {
+      const ss = abrirPlanilha(config.spreadsheetUrl);
+      const sheet = getAbaAdmins(ss);
+      const rows = sheet.getDataRange().getValues();
+      const lista = [];
+      for (let i = 1; i < rows.length; i++) {
+        const e = String(rows[i][0] || '').trim();
+        if (e && lista.map(function(x) { return x.toLowerCase(); }).indexOf(e.toLowerCase()) === -1) lista.push(e);
+      }
+      if (!lista.some(function(e) { return e.toLowerCase() === inicial; })) {
+        sheet.appendRow([ADMIN_INICIAL]);
+        lista.unshift(ADMIN_INICIAL);
+      }
+      return lista;
+    } catch (e) {
+      // Falhou na planilha: cai no fallback de ScriptProperties
+    }
+  }
+
+  // Fallback: ScriptProperties (sem planilha configurada)
   const props = PropertiesService.getScriptProperties();
   let lista = [];
   const raw = props.getProperty(PROP_ADMINS);
-  if (raw) {
-    try { lista = JSON.parse(raw); } catch (e) { lista = []; }
-  }
+  if (raw) { try { lista = JSON.parse(raw); } catch (e) { lista = []; } }
   if (!Array.isArray(lista)) lista = [];
-  const inicial = ADMIN_INICIAL.toLowerCase();
-  const jaTem = lista.some(function(e) { return String(e).trim().toLowerCase() === inicial; });
-  if (!jaTem) {
+  if (!lista.some(function(e) { return String(e).trim().toLowerCase() === inicial; })) {
     lista.unshift(ADMIN_INICIAL);
     props.setProperty(PROP_ADMINS, JSON.stringify(lista));
   }
@@ -94,12 +126,22 @@ function adicionarAdmin(email) {
   exigirAdmin();
   const e = String(email || '').trim().toLowerCase();
   if (!e || e.indexOf('@') === -1) throw new Error('E-mail inválido.');
-  const lista = getAdmins();
-  if (!lista.some(function(x) { return String(x).trim().toLowerCase() === e; })) {
-    lista.push(e);
-    PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
+  if (getAdmins().some(function(x) { return String(x).trim().toLowerCase() === e; })) {
+    return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' já estava cadastrado.' };
   }
-  return { success: true, admins: lista, message: 'Administrador ' + e + ' cadastrado com sucesso.' };
+  const config = getSystemConfig();
+  if (config.spreadsheetUrl) {
+    const ss = abrirPlanilha(config.spreadsheetUrl);
+    getAbaAdmins(ss).appendRow([e]);
+  } else {
+    const props = PropertiesService.getScriptProperties();
+    let lista = [];
+    try { lista = JSON.parse(props.getProperty(PROP_ADMINS)) || []; } catch (x) { lista = []; }
+    if (!Array.isArray(lista)) lista = [];
+    lista.push(e);
+    props.setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' cadastrado com sucesso.' };
 }
 
 /**
@@ -111,9 +153,23 @@ function removerAdmin(email) {
   if (e === ADMIN_INICIAL.toLowerCase()) {
     throw new Error('O administrador principal não pode ser removido.');
   }
-  const lista = getAdmins().filter(function(x) { return String(x).trim().toLowerCase() !== e; });
-  PropertiesService.getScriptProperties().setProperty(PROP_ADMINS, JSON.stringify(lista));
-  return { success: true, admins: lista, message: 'Administrador ' + e + ' removido.' };
+  const config = getSystemConfig();
+  if (config.spreadsheetUrl) {
+    const ss = abrirPlanilha(config.spreadsheetUrl);
+    const sheet = getAbaAdmins(ss);
+    const rows = sheet.getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][0] || '').trim().toLowerCase() === e) sheet.deleteRow(i + 1);
+    }
+  } else {
+    const props = PropertiesService.getScriptProperties();
+    let lista = [];
+    try { lista = JSON.parse(props.getProperty(PROP_ADMINS)) || []; } catch (x) { lista = []; }
+    if (!Array.isArray(lista)) lista = [];
+    lista = lista.filter(function(x) { return String(x).trim().toLowerCase() !== e; });
+    props.setProperty(PROP_ADMINS, JSON.stringify(lista));
+  }
+  return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' removido.' };
 }
 
 /**
@@ -237,10 +293,27 @@ function salvarSystemConfig(config) {
 }
 
 /**
+ * Abre uma planilha aceitando tanto a URL completa quanto o ID puro do arquivo.
+ * Evita o erro "Argumento inválido: url" quando o usuário cola só o ID.
+ */
+function abrirPlanilha(urlOrId) {
+  const s = String(urlOrId == null ? '' : urlOrId).trim();
+  if (!s) throw new Error('Planilha de destino não configurada.');
+  // Extrai o ID de uma URL (/d/<ID>) ou aceita um ID puro (25+ caracteres válidos)
+  let id = '';
+  const mUrl = s.match(/\/d\/([-\w]{25,})/);
+  if (mUrl) id = mUrl[1];
+  else if (/^[-\w]{25,}$/.test(s)) id = s;
+  if (id) return SpreadsheetApp.openById(id);
+  // Último recurso: tenta como URL (lança erro claro se for inválida)
+  return SpreadsheetApp.openByUrl(s);
+}
+
+/**
  * Inicializa os cabeçalhos das planilhas de destino caso não existam
  */
 function inicializarPlanilha(url, abaPrincipalName, abaAlertasName) {
-  const ss = SpreadsheetApp.openByUrl(url);
+  const ss = abrirPlanilha(url);
   
   // 1. Inicializa Aba Principal
   let sheetPrincipal = ss.getSheetByName(abaPrincipalName);
@@ -347,7 +420,7 @@ function listarAnalises() {
   
   if (config.spreadsheetUrl) {
     try {
-      const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+      const ss = abrirPlanilha(config.spreadsheetUrl);
       const sheet = ss.getSheetByName(config.abaPrincipal);
       if (sheet) {
         const rows = sheet.getDataRange().getValues();
@@ -466,7 +539,7 @@ function deletarAnalise(id) {
   const config = getSystemConfig();
   if (config.spreadsheetUrl) {
     try {
-      const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+      const ss = abrirPlanilha(config.spreadsheetUrl);
       const sheet = ss.getSheetByName(config.abaPrincipal);
       if (sheet) {
         const rows = sheet.getDataRange().getValues();
@@ -503,7 +576,7 @@ function exportarParaSheets(analysisId) {
   }
   
   try {
-    const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+    const ss = abrirPlanilha(config.spreadsheetUrl);
     
     // Assegura cabeçalhos
     inicializarPlanilha(config.spreadsheetUrl, config.abaPrincipal, config.abaAlertas);
@@ -972,7 +1045,7 @@ function buscarCnsCartorio(cartorio, comarca, endereco) {
   try {
     const config = getSystemConfig();
     if (!config.spreadsheetUrl) return '';
-    const ss = SpreadsheetApp.openByUrl(config.spreadsheetUrl);
+    const ss = abrirPlanilha(config.spreadsheetUrl);
 
     // Localiza a aba de forma tolerante (contém "cns" no nome)
     let sheet = null;
@@ -1391,7 +1464,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "- Fração Mínima (FMP): em imóveis rurais, se a garantia elegível for uma fração ideal, confronte a área da fração com o campo 'FMP' do INCRA na matrícula. Se a área da fração ofertada for inferior à FMP do município, emita um alerta impeditivo do tipo CRÍTICO, defina 'rating' como D, 'nivelRisco' ALTO e 'status' REJEITADO, pois o Cartório recusará o registro por vedação legal de parcelamento do solo.\n" +
       "- Georreferenciamento (GEO): identifique se há averbação (AV) de Georreferenciamento certificado pelo SIGEF/INCRA. Para imóveis rurais SEM GEO averbado, insira um alerta do tipo ATENÇÃO de pendência documental, pois o registro da garantia real hoje exige a descrição georreferenciada regularizada previamente.\n" +
       "- Benfeitorias Fantasmas: se a matrícula descrever o imóvel apenas como 'terreno', 'fração de terras' ou 'lote', sem nenhuma menção a prédios, casas, galpões ou silos, preencha o campo 'areaConstruida' estritamente como 'Não averbada (Terreno Nu)' e gere um alerta do tipo ATENÇÃO indicando a necessidade de averbação futura das benfeitorias existentes in loco.\n" +
-      "5. Minuta: gere uma descrição legal completa e atualizada (pronta para contrato), refletindo eventuais retificações de logradouro/área feitas por averbações.\n" +
+      "5. Minuta (descrição legal): TRANSCREVA a descrição do imóvel EXATAMENTE como consta na matrícula, de forma LITERAL, integral e fiel (é exigência dos Cartórios de Registro que a descrição seja idêntica à da matrícula). Mantenha a mesma redação e a mesma ordem das confrontações e, OBRIGATORIAMENTE, preserve as medidas escritas POR EXTENSO entre parênteses, tal como no documento — ex.: 'na extensão de 204,85m (duzentos e quatro metros e oitenta e cinco centímetros)'. NÃO resuma, NÃO reescreva com suas palavras e NÃO omita os valores por extenso, as frações de centímetros ou os nomes/matrículas dos confrontantes. Reflita apenas as retificações de logradouro/área que já estejam averbadas, quando houver.\n" +
       "6. Identificadores: se a matrícula citar o CNM (Código Nacional de Matrícula, padrão do ONR/SREI, formato tipo NNNNNN.N.NNNNNNN-NN), transcreva-o no campo 'cnm'; se citar o CNS (Código Nacional da Serventia — os 6 dígitos que identificam o cartório, frequentemente a parte inicial do CNM antes do primeiro ponto), transcreva-o no campo 'cns'; se citar CEP do imóvel, transcreva-o no campo 'cep'. NÃO invente CNM, CNS nem CEP específico se não constarem. Adicionalmente, preencha 'cepMunicipio' com o CEP GERAL do município (a localidade/sede, conforme os Correios) — este servirá de referência quando o CEP específico do imóvel não constar.\n\n" +
       "LEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF nativo, PDF digitalizado ou FOTOGRAFIA da matrícula (torta, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral, lendo todos os R- e AV- na ordem. NUNCA invente dados: se um campo estiver ilegível ou ausente, use 'Não identificado' e registre a ilegibilidade como alerta do tipo ATENÇÃO. Baseie-se estritamente no documento fornecido.";
 
@@ -1417,7 +1490,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    \"area\": \"string (área TOTAL do terreno/imóvel = 100%; se não houver total explícito, some as áreas das frações dos proprietários. Nunca deixe vazio)\",\n" +
                  "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
                  "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
-                 "    \"descricaoLegal\": \"string (descritivo legal completo e atualizado, pronto para contrato)\",\n" +
+                 "    \"descricaoLegal\": \"string (TRANSCRIÇÃO LITERAL e integral da descrição do imóvel como consta na matrícula, pronta para contrato; preserve as medidas POR EXTENSO entre parênteses e os confrontantes; NÃO resumir nem reescrever)\",\n" +
                  "    \"confrontacoes\": [\n" +
                  "      { \"posicao\": \"Norte|Sul|Leste|Oeste\", \"confrontante\": \"string\", \"medida\": \"string\" }\n" +
                  "    ]\n" +
@@ -1500,29 +1573,41 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "muteHttpExceptions": true
     };
     
-    // Rotação de chaves: tenta cada chave em ordem; ao atingir limite/cota, usa a próxima.
+    // Rotação de chaves + retry: tenta cada chave; em sobrecarga temporária (503/500)
+    // repete a MESMA chave com espera (backoff); em limite/cota, passa para a próxima.
     let code = 0;
     let bodyText = '';
     let sucesso = false;
     let ultimoErro = '';
     for (let ki = 0; ki < apiKeys.length; ki++) {
-      const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(apiKeys[ki]), options);
-      code = response.getResponseCode();
-      bodyText = response.getContentText();
-
-      if (code === 200) {
-        sucesso = true;
-        break;
+      // Até 3 tentativas na mesma chave para sobrecarga temporária do modelo
+      for (let tent = 0; tent < 3; tent++) {
+        const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(apiKeys[ki]), options);
+        code = response.getResponseCode();
+        bodyText = response.getContentText();
+        if (code === 200) { sucesso = true; break; }
+        const sobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded|try again later|internal error/i.test(bodyText);
+        if (sobrecarga && tent < 2) {
+          Utilities.sleep(2000 * (tent + 1)); // backoff: 2s, depois 4s
+          continue; // tenta de novo a MESMA chave
+        }
+        break; // sucesso já tratado; senão é limite/erro -> sai do retry
       }
+      if (sucesso) break;
 
-      // Erros de cota/limite/chave inválida -> tenta a próxima chave cadastrada
       const ehLimite = (code === 429 || code === 403) || /RESOURCE_EXHAUSTED|quota|rate limit|exceeded|expired|invalid/i.test(bodyText);
-      if (ehLimite && ki < apiKeys.length - 1) {
+      const ehSobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded/i.test(bodyText);
+
+      // Limite/cota OU sobrecarga persistente -> tenta a próxima chave, se houver
+      if ((ehLimite || ehSobrecarga) && ki < apiKeys.length - 1) {
         ultimoErro = "Chave " + (ki + 1) + " indisponível (status " + code + ").";
         continue;
       }
 
-      // Outro erro (payload, servidor) ou última chave -> interrompe
+      // Última chave (ou erro não recuperável) -> mensagem específica
+      if (ehSobrecarga) {
+        throw new Error("O modelo de IA está temporariamente sobrecarregado (status " + code + " - alta demanda no Gemini). Aguarde alguns instantes e envie novamente.");
+      }
       if (ehLimite) {
         throw new Error("Todas as " + apiKeys.length + " chave(s) de API atingiram o limite/estão indisponíveis. Último status: " + code + ". " + bodyText);
       }

@@ -610,6 +610,10 @@
                   </button>
                 </div>
                 <p id="info-descricao-legal" data-path="imovel.descricaoLegal" class="editable-field text-text-dark leading-relaxed text-xs whitespace-pre-line"></p>
+                <p class="mt-2 pt-2 border-t border-primary-green/10 text-[10px] text-accent-orange flex items-start gap-1.5">
+                  <i data-lucide="alert-triangle" class="w-3.5 h-3.5 shrink-0 mt-px"></i>
+                  <span>Confira a transcrição com a matrícula original antes de usar em contrato. Transcrição gerada por IA — sujeita a deslizes de leitura (OCR).</span>
+                </p>
               </div>
             </div>
 
@@ -705,8 +709,9 @@
             </div>
             <form id="sheets-config-form" onsubmit="saveSheetsConfig(event)" class="p-6 space-y-4">
               <div>
-                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">URL da Planilha de Destino</label>
-                <input type="text" id="config-spreadsheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">URL (ou ID) da Planilha de Destino</label>
+                <input type="text" id="config-spreadsheet-url" placeholder="https://docs.google.com/spreadsheets/d/<ID>/edit — ou cole só o ID" class="w-full border border-border-gray rounded-lg p-2.5 text-sm outline-none focus:ring-1 focus:ring-primary-green">
+                <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">Aceita a URL completa ou apenas o ID da planilha.</p>
               </div>
 
               <div class="grid grid-cols-2 gap-4">
@@ -770,7 +775,7 @@
                 <i data-lucide="users-round" class="w-4.5 h-4.5 text-accent-orange"></i>
                 Administradores do Sistema
               </h3>
-              <p class="text-xs text-text-gray mt-1">Apenas administradores acessam as abas <strong>Importação IA</strong> e <strong>Configurações</strong>. O acesso é definido pelo e-mail logado (conta Cresol).</p>
+              <p class="text-xs text-text-gray mt-1">Apenas administradores acessam as abas <strong>Importação IA</strong> e <strong>Configurações</strong>. O acesso é definido pelo e-mail logado (conta Cresol). A lista fica salva na aba <strong>ADMINS</strong> da planilha — dá para editá-la direto por lá também.</p>
             </div>
             <div class="p-6 space-y-4">
               <div class="flex flex-col sm:flex-row gap-3">
@@ -1691,7 +1696,7 @@
         return;
       }
       admins.forEach(function(email) {
-        const principal = String(email).toLowerCase() === 'jeferson.deimling@cresolsicoper.com.br';
+        const principal = String(email).toLowerCase() === 'cooperar.comite@cresolsicoper.com.br';
         wrap.innerHTML += `
           <div class="flex items-center justify-between gap-3 px-3 py-2 bg-bg-body rounded-lg border border-border-gray">
             <span class="text-sm text-text-dark font-mono truncate flex items-center gap-2">
