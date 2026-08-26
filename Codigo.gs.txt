@@ -1573,29 +1573,41 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "muteHttpExceptions": true
     };
     
-    // Rotação de chaves: tenta cada chave em ordem; ao atingir limite/cota, usa a próxima.
+    // Rotação de chaves + retry: tenta cada chave; em sobrecarga temporária (503/500)
+    // repete a MESMA chave com espera (backoff); em limite/cota, passa para a próxima.
     let code = 0;
     let bodyText = '';
     let sucesso = false;
     let ultimoErro = '';
     for (let ki = 0; ki < apiKeys.length; ki++) {
-      const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(apiKeys[ki]), options);
-      code = response.getResponseCode();
-      bodyText = response.getContentText();
-
-      if (code === 200) {
-        sucesso = true;
-        break;
+      // Até 3 tentativas na mesma chave para sobrecarga temporária do modelo
+      for (let tent = 0; tent < 3; tent++) {
+        const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(apiKeys[ki]), options);
+        code = response.getResponseCode();
+        bodyText = response.getContentText();
+        if (code === 200) { sucesso = true; break; }
+        const sobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded|try again later|internal error/i.test(bodyText);
+        if (sobrecarga && tent < 2) {
+          Utilities.sleep(2000 * (tent + 1)); // backoff: 2s, depois 4s
+          continue; // tenta de novo a MESMA chave
+        }
+        break; // sucesso já tratado; senão é limite/erro -> sai do retry
       }
+      if (sucesso) break;
 
-      // Erros de cota/limite/chave inválida -> tenta a próxima chave cadastrada
       const ehLimite = (code === 429 || code === 403) || /RESOURCE_EXHAUSTED|quota|rate limit|exceeded|expired|invalid/i.test(bodyText);
-      if (ehLimite && ki < apiKeys.length - 1) {
+      const ehSobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded/i.test(bodyText);
+
+      // Limite/cota OU sobrecarga persistente -> tenta a próxima chave, se houver
+      if ((ehLimite || ehSobrecarga) && ki < apiKeys.length - 1) {
         ultimoErro = "Chave " + (ki + 1) + " indisponível (status " + code + ").";
         continue;
       }
 
-      // Outro erro (payload, servidor) ou última chave -> interrompe
+      // Última chave (ou erro não recuperável) -> mensagem específica
+      if (ehSobrecarga) {
+        throw new Error("O modelo de IA está temporariamente sobrecarregado (status " + code + " - alta demanda no Gemini). Aguarde alguns instantes e envie novamente.");
+      }
       if (ehLimite) {
         throw new Error("Todas as " + apiKeys.length + " chave(s) de API atingiram o limite/estão indisponíveis. Último status: " + code + ". " + bodyText);
       }
