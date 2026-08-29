@@ -532,32 +532,34 @@ function salvarAnalise(analysis) {
  * Exclui uma análise do histórico local
  */
 function deletarAnalise(id) {
-  const list = listarAnalises();
-  const updated = list.filter(function(item) {
-    return item.id !== id;
-  });
-  salvarBancoLocal(updated);
-  
-  // Também tenta remover da planilha se estiver configurado
+  // Remove do banco local (cache pequeno) — sem reler a planilha inteira
+  const local = getBancoLocal().filter(function(item) { return item && item.id !== id; });
+  salvarBancoLocal(local);
+
+  // Remove da planilha (lê só a coluna A) com trava de concorrência
   const config = getSystemConfig();
   if (config.spreadsheetUrl) {
+    const lock = LockService.getScriptLock();
     try {
+      lock.waitLock(30000);
       const ss = abrirPlanilha(config.spreadsheetUrl);
       const sheet = ss.getSheetByName(config.abaPrincipal);
       if (sheet) {
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          if (rows[i][0] === id) {
-            sheet.deleteRow(i + 1);
-            break;
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+          for (let i = ids.length - 1; i >= 0; i--) {
+            if (ids[i][0] === id) { sheet.deleteRow(i + 2); break; }
           }
         }
       }
     } catch (e) {
       // Erro silencioso na planilha
+    } finally {
+      try { lock.releaseLock(); } catch (e) {}
     }
   }
-  
+
   return { success: true, message: "Registro excluído com sucesso!" };
 }
 
@@ -578,25 +580,29 @@ function exportarParaSheets(analysisId) {
     throw new Error("Análise não encontrada nos registros.");
   }
   
+  // Trava de concorrência: serializa escritas simultâneas (evita duplicar/sobrescrever)
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { throw new Error("Sistema ocupado gravando na planilha. Tente novamente em instantes."); }
+
   try {
     const ss = abrirPlanilha(config.spreadsheetUrl);
-    
+
     // Assegura cabeçalhos
     inicializarPlanilha(config.spreadsheetUrl, config.abaPrincipal, config.abaAlertas);
-    
+
     const sheetPrincipal = ss.getSheetByName(config.abaPrincipal);
     const sheetAlertas = ss.getSheetByName(config.abaAlertas);
-    
-    // Verifica se já existe para evitar duplicados
-    const rows = sheetPrincipal.getDataRange().getValues();
+
+    // Localiza a linha lendo APENAS a coluna A (ids) — não puxa o JSON gordo de todas as linhas
     let rowIndexToUpdate = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][0] === analysisId) {
-        rowIndexToUpdate = i + 1;
-        break;
+    const lastRow = sheetPrincipal.getLastRow();
+    if (lastRow >= 2) {
+      const ids = sheetPrincipal.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (ids[i][0] === analysisId) { rowIndexToUpdate = i + 2; break; }
       }
     }
-    
+
     const rowData = [
       target.id,
       target.timestamp,
@@ -616,45 +622,40 @@ function exportarParaSheets(analysisId) {
     ];
 
     if (rowIndexToUpdate > -1) {
-      // Atualiza linha existente
       sheetPrincipal.getRange(rowIndexToUpdate, 1, 1, rowData.length).setValues([rowData]);
     } else {
-      // Adiciona nova linha
       sheetPrincipal.appendRow(rowData);
     }
-    
+
     // Exporta Alertas detalhados na aba de Alertas de Risco
     if (sheetAlertas && target.alertas && target.alertas.length > 0) {
-      // Limpa alertas anteriores deste Lote para atualizar
-      const alertaRows = sheetAlertas.getDataRange().getValues();
-      for (let j = alertaRows.length - 1; j >= 1; j--) {
-        if (alertaRows[j][0] === analysisId) {
-          sheetAlertas.deleteRow(j + 1);
+      // Remove alertas anteriores deste Lote lendo APENAS a coluna A
+      const lastRowA = sheetAlertas.getLastRow();
+      if (lastRowA >= 2) {
+        const aIds = sheetAlertas.getRange(2, 1, lastRowA - 1, 1).getValues();
+        for (let j = aIds.length - 1; j >= 0; j--) {
+          if (aIds[j][0] === analysisId) sheetAlertas.deleteRow(j + 2);
         }
       }
-      
       // Insere novos alertas
       for (let k = 0; k < target.alertas.length; k++) {
         const alerta = target.alertas[k];
         sheetAlertas.appendRow([
-          target.id,
-          target.timestamp,
-          target.imovel.matricula,
-          target.imovel.comarca,
-          alerta.titulo,
-          alerta.descricao,
-          alerta.tipo
+          target.id, target.timestamp, target.imovel.matricula, target.imovel.comarca,
+          alerta.titulo, alerta.descricao, alerta.tipo
         ]);
       }
     }
-    
+
     return {
       success: true,
       message: "Dados sincronizados com sucesso na Planilha Google da Cresol!"
     };
-    
+
   } catch (e) {
     throw new Error("Erro de conexão com o Google Sheets: " + e.toString());
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -1447,6 +1448,11 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
     throw new Error("Nenhuma chave de API do Gemini configurada. Cadastre ao menos uma chave em Configurações para processar matrículas.");
   }
   
+  // Instrumentação de tempo: mede quanto cada etapa consome no ambiente real,
+  // para diagnosticar travamentos/lentidão (Gemini, CEP, CNS, gravação, Drive).
+  const _t = { ini: Date.now() };
+  const _ms = (de, ate) => (ate - de);
+
   // Caso de Chave(s) API ativa(s): Chamada Real ao Gemini API via UrlFetchApp
   try {
     const dataCorrenteStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
@@ -1645,7 +1651,8 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
     let responseJsonText = candidate.content.parts[0].text.trim();
     responseJsonText = responseJsonText.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
     const parsedData = JSON.parse(responseJsonText);
-    
+    _t.gemini = Date.now(); // fim da chamada ao Gemini (OCR + análise + parse)
+
     // Garante a estrutura mínima de "imovel" para não quebrar a renderização na interface
     const imovelSafe = parsedData.imovel || {};
     const finalResult = {
@@ -1696,6 +1703,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       }
       finalResult.imovel.cep = cepFinal ? (cepFinal + ' (' + fonte + ')') : 'Não localizado';
     }
+    _t.cep = Date.now(); // fim da resolução de CEP (ViaCEP + fallback município)
 
     // CNS do cartório: (1) do documento; (2) derivado do CNM (6 dígitos iniciais);
     // (3) consulta na aba "CNS Cartório Base BRDE" por comarca/UF.
@@ -1712,9 +1720,11 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         finalResult.imovel.cns = cnsBase ? (cnsBase + ' (base BRDE)') : '';
       }
     }
+    _t.cns = Date.now(); // fim da resolução de CNS (documento/CNM/base BRDE)
 
     // Grava (ou mescla, se a matrícula já existir) no banco
     const resultado = registrarOuMesclar(finalResult);
+    _t.reg = Date.now(); // fim da gravação/mesclagem na planilha
 
     // Salva o arquivo importado no Drive (renomeado com o ID do Lote), se configurado
     if (fileBase64 && fileBase64.trim() !== "") {
@@ -1730,6 +1740,18 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         // Não interrompe a análise se o Drive falhar (ex.: pasta inválida ou sem permissão)
       }
     }
+    _t.drive = Date.now(); // fim do salvamento do arquivo no Drive
+
+    // Resumo de tempos por etapa (ms). Visível em "Execuções" do Apps Script.
+    // Serve para identificar o gargalo real (Gemini x CEP x CNS x planilha x Drive).
+    try {
+      console.log('[TEMPO] Gemini=' + _ms(_t.ini, _t.gemini) + 'ms | ' +
+        'CEP=' + _ms(_t.gemini, _t.cep) + 'ms | ' +
+        'CNS=' + _ms(_t.cep, _t.cns) + 'ms | ' +
+        'Planilha=' + _ms(_t.cns, _t.reg) + 'ms | ' +
+        'Drive=' + _ms(_t.reg, _t.drive) + 'ms | ' +
+        'TOTAL=' + _ms(_t.ini, _t.drive) + 'ms');
+    } catch (e) {}
 
     return resultado;
 
