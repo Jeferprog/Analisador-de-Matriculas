@@ -10,6 +10,9 @@ const PROP_CONFIG = 'CRESOL_CONFIG_JSON';
 
 // Custo: modelo e preços do Gemini (USD por 1M de tokens) + câmbio de fallback
 const GEMINI_MODEL_NAME = 'gemini-2.5-flash';
+// Modelos tentados em ordem: se o principal estiver sobrecarregado/sem cota,
+// cai automaticamente para o próximo (cada modelo tem cota própria e separada).
+const GEMINI_MODELOS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 const PRECO_INPUT_USD_1M = 0.30;   // US$ / 1M tokens de entrada
 const PRECO_OUTPUT_USD_1M = 2.50;  // US$ / 1M tokens de saída (inclui tokens de raciocínio)
 const CAMBIO_FALLBACK = 5.40;      // usado se a cotação ao vivo falhar
@@ -529,32 +532,34 @@ function salvarAnalise(analysis) {
  * Exclui uma análise do histórico local
  */
 function deletarAnalise(id) {
-  const list = listarAnalises();
-  const updated = list.filter(function(item) {
-    return item.id !== id;
-  });
-  salvarBancoLocal(updated);
-  
-  // Também tenta remover da planilha se estiver configurado
+  // Remove do banco local (cache pequeno) — sem reler a planilha inteira
+  const local = getBancoLocal().filter(function(item) { return item && item.id !== id; });
+  salvarBancoLocal(local);
+
+  // Remove da planilha (lê só a coluna A) com trava de concorrência
   const config = getSystemConfig();
   if (config.spreadsheetUrl) {
+    const lock = LockService.getScriptLock();
     try {
+      lock.waitLock(30000);
       const ss = abrirPlanilha(config.spreadsheetUrl);
       const sheet = ss.getSheetByName(config.abaPrincipal);
       if (sheet) {
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          if (rows[i][0] === id) {
-            sheet.deleteRow(i + 1);
-            break;
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+          for (let i = ids.length - 1; i >= 0; i--) {
+            if (ids[i][0] === id) { sheet.deleteRow(i + 2); break; }
           }
         }
       }
     } catch (e) {
       // Erro silencioso na planilha
+    } finally {
+      try { lock.releaseLock(); } catch (e) {}
     }
   }
-  
+
   return { success: true, message: "Registro excluído com sucesso!" };
 }
 
@@ -575,25 +580,29 @@ function exportarParaSheets(analysisId) {
     throw new Error("Análise não encontrada nos registros.");
   }
   
+  // Trava de concorrência: serializa escritas simultâneas (evita duplicar/sobrescrever)
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { throw new Error("Sistema ocupado gravando na planilha. Tente novamente em instantes."); }
+
   try {
     const ss = abrirPlanilha(config.spreadsheetUrl);
-    
+
     // Assegura cabeçalhos
     inicializarPlanilha(config.spreadsheetUrl, config.abaPrincipal, config.abaAlertas);
-    
+
     const sheetPrincipal = ss.getSheetByName(config.abaPrincipal);
     const sheetAlertas = ss.getSheetByName(config.abaAlertas);
-    
-    // Verifica se já existe para evitar duplicados
-    const rows = sheetPrincipal.getDataRange().getValues();
+
+    // Localiza a linha lendo APENAS a coluna A (ids) — não puxa o JSON gordo de todas as linhas
     let rowIndexToUpdate = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][0] === analysisId) {
-        rowIndexToUpdate = i + 1;
-        break;
+    const lastRow = sheetPrincipal.getLastRow();
+    if (lastRow >= 2) {
+      const ids = sheetPrincipal.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (ids[i][0] === analysisId) { rowIndexToUpdate = i + 2; break; }
       }
     }
-    
+
     const rowData = [
       target.id,
       target.timestamp,
@@ -613,45 +622,40 @@ function exportarParaSheets(analysisId) {
     ];
 
     if (rowIndexToUpdate > -1) {
-      // Atualiza linha existente
       sheetPrincipal.getRange(rowIndexToUpdate, 1, 1, rowData.length).setValues([rowData]);
     } else {
-      // Adiciona nova linha
       sheetPrincipal.appendRow(rowData);
     }
-    
+
     // Exporta Alertas detalhados na aba de Alertas de Risco
     if (sheetAlertas && target.alertas && target.alertas.length > 0) {
-      // Limpa alertas anteriores deste Lote para atualizar
-      const alertaRows = sheetAlertas.getDataRange().getValues();
-      for (let j = alertaRows.length - 1; j >= 1; j--) {
-        if (alertaRows[j][0] === analysisId) {
-          sheetAlertas.deleteRow(j + 1);
+      // Remove alertas anteriores deste Lote lendo APENAS a coluna A
+      const lastRowA = sheetAlertas.getLastRow();
+      if (lastRowA >= 2) {
+        const aIds = sheetAlertas.getRange(2, 1, lastRowA - 1, 1).getValues();
+        for (let j = aIds.length - 1; j >= 0; j--) {
+          if (aIds[j][0] === analysisId) sheetAlertas.deleteRow(j + 2);
         }
       }
-      
       // Insere novos alertas
       for (let k = 0; k < target.alertas.length; k++) {
         const alerta = target.alertas[k];
         sheetAlertas.appendRow([
-          target.id,
-          target.timestamp,
-          target.imovel.matricula,
-          target.imovel.comarca,
-          alerta.titulo,
-          alerta.descricao,
-          alerta.tipo
+          target.id, target.timestamp, target.imovel.matricula, target.imovel.comarca,
+          alerta.titulo, alerta.descricao, alerta.tipo
         ]);
       }
     }
-    
+
     return {
       success: true,
       message: "Dados sincronizados com sucesso na Planilha Google da Cresol!"
     };
-    
+
   } catch (e) {
     throw new Error("Erro de conexão com o Google Sheets: " + e.toString());
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -1146,7 +1150,7 @@ function obterCambioUsdBrl() {
  * Calcula o custo do processamento a partir do usageMetadata retornado pela API.
  * O custo de saída inclui os tokens de "raciocínio" (contabilizados no total).
  */
-function calcularCusto(usage) {
+function calcularCusto(usage, modelo) {
   usage = usage || {};
   const inputTokens = usage.promptTokenCount || 0;
   const total = usage.totalTokenCount || 0;
@@ -1165,7 +1169,7 @@ function calcularCusto(usage) {
     usd: usd,
     brl: usd * cambio,
     cambio: cambio,
-    modelo: GEMINI_MODEL_NAME,
+    modelo: modelo || GEMINI_MODEL_NAME,
     em: new Date().toISOString()
   };
 }
@@ -1444,10 +1448,13 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
     throw new Error("Nenhuma chave de API do Gemini configurada. Cadastre ao menos uma chave em Configurações para processar matrículas.");
   }
   
+  // Instrumentação de tempo: mede quanto cada etapa consome no ambiente real,
+  // para diagnosticar travamentos/lentidão (Gemini, CEP, CNS, gravação, Drive).
+  const _t = { ini: Date.now() };
+  const _ms = (de, ate) => (ate - de);
+
   // Caso de Chave(s) API ativa(s): Chamada Real ao Gemini API via UrlFetchApp
   try {
-    const baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=";
-
     const dataCorrenteStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
     let systemInstructionText =
       "Você é o Analista Sênior de Registros Públicos e Direito Imobiliário da cooperativa Cresol. Sua missão de alta responsabilidade é examinar detalhadamente matrículas de imóveis, interpretando a linguagem técnica registral e notarial, rastreando a cadeia dominial (proprietários anteriores e atuais) com suas participações, e identificando rigorosamente restrições de crédito e gravames (penhoras, alienações fiduciárias ativas ou baixadas, indisponibilidades de bens, hipotecas, servidões, usufrutos, arresto, arrolamento). Ao final, classifique o risco fiduciário do bem como garantia (de AAA+ a D) e consolide um parecer técnico de elegibilidade jurídica para crédito.\n\n" +
@@ -1573,49 +1580,58 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "muteHttpExceptions": true
     };
     
-    // Rotação de chaves + retry: tenta cada chave; em sobrecarga temporária (503/500)
-    // repete a MESMA chave com espera (backoff); em limite/cota, passa para a próxima.
+    // Tenta cada MODELO em ordem; dentro de cada um, rotaciona as chaves e faz retry
+    // com backoff em sobrecarga temporária (503/500). Cai para o próximo modelo se o
+    // atual estiver sobrecarregado ou sem cota em todas as chaves.
     let code = 0;
     let bodyText = '';
     let sucesso = false;
     let ultimoErro = '';
-    for (let ki = 0; ki < apiKeys.length; ki++) {
-      // Até 3 tentativas na mesma chave para sobrecarga temporária do modelo
-      for (let tent = 0; tent < 3; tent++) {
-        const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(apiKeys[ki]), options);
-        code = response.getResponseCode();
-        bodyText = response.getContentText();
-        if (code === 200) { sucesso = true; break; }
-        const sobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded|try again later|internal error/i.test(bodyText);
-        if (sobrecarga && tent < 2) {
-          Utilities.sleep(2000 * (tent + 1)); // backoff: 2s, depois 4s
-          continue; // tenta de novo a MESMA chave
+    let modeloUsado = '';
+    let erroNaoRecuperavel = null;
+
+    for (let mi = 0; mi < GEMINI_MODELOS.length && !sucesso; mi++) {
+      const modelo = GEMINI_MODELOS[mi];
+      const baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + modelo + ":generateContent?key=";
+
+      for (let ki = 0; ki < apiKeys.length && !sucesso; ki++) {
+        // Até 3 tentativas na mesma chave para sobrecarga temporária do modelo
+        for (let tent = 0; tent < 3; tent++) {
+          const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(apiKeys[ki]), options);
+          code = response.getResponseCode();
+          bodyText = response.getContentText();
+          if (code === 200) { sucesso = true; modeloUsado = modelo; break; }
+          const sobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded|try again later|internal error/i.test(bodyText);
+          if (sobrecarga && tent < 2) {
+            Utilities.sleep(2000 * (tent + 1)); // backoff: 2s, depois 4s
+            continue; // tenta de novo a MESMA chave
+          }
+          break;
         }
-        break; // sucesso já tratado; senão é limite/erro -> sai do retry
-      }
-      if (sucesso) break;
+        if (sucesso) break;
 
-      const ehLimite = (code === 429 || code === 403) || /RESOURCE_EXHAUSTED|quota|rate limit|exceeded|expired|invalid/i.test(bodyText);
-      const ehSobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded/i.test(bodyText);
+        const ehLimite = (code === 429 || code === 403) || /RESOURCE_EXHAUSTED|quota|rate limit|exceeded|expired|invalid/i.test(bodyText);
+        const ehSobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded/i.test(bodyText);
 
-      // Limite/cota OU sobrecarga persistente -> tenta a próxima chave, se houver
-      if ((ehLimite || ehSobrecarga) && ki < apiKeys.length - 1) {
-        ultimoErro = "Chave " + (ki + 1) + " indisponível (status " + code + ").";
-        continue;
-      }
+        if (ehLimite || ehSobrecarga) {
+          ultimoErro = "Modelo " + modelo + " / chave " + (ki + 1) + " indisponível (status " + code + ").";
+          continue; // próxima chave; esgotando as chaves, o loop de modelos tenta o próximo modelo
+        }
 
-      // Última chave (ou erro não recuperável) -> mensagem específica
-      if (ehSobrecarga) {
-        throw new Error("O modelo de IA está temporariamente sobrecarregado (status " + code + " - alta demanda no Gemini). Aguarde alguns instantes e envie novamente.");
+        // Erro não recuperável (ex.: payload inválido) -> não adianta trocar chave/modelo
+        erroNaoRecuperavel = new Error("Erro da API Gemini (Status " + code + "): " + bodyText);
+        break;
       }
-      if (ehLimite) {
-        throw new Error("Todas as " + apiKeys.length + " chave(s) de API atingiram o limite/estão indisponíveis. Último status: " + code + ". " + bodyText);
-      }
-      throw new Error("Erro da API Gemini (Status " + code + "): " + bodyText);
+      if (erroNaoRecuperavel) break;
     }
 
+    if (erroNaoRecuperavel) throw erroNaoRecuperavel;
     if (!sucesso) {
-      throw new Error("Não foi possível obter resposta da IA. " + ultimoErro);
+      const ehSobrecarga = (code === 503 || code === 500) || /UNAVAILABLE|high demand|overloaded/i.test(bodyText);
+      if (ehSobrecarga) {
+        throw new Error("Os modelos de IA estão temporariamente sobrecarregados (status " + code + " - alta demanda no Gemini). Aguarde alguns instantes e envie novamente.");
+      }
+      throw new Error("Todas as chaves/modelos estão indisponíveis (limite de cota ou erro). Último: " + ultimoErro + " " + bodyText);
     }
 
     const parsedRaw = JSON.parse(bodyText);
@@ -1635,7 +1651,8 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
     let responseJsonText = candidate.content.parts[0].text.trim();
     responseJsonText = responseJsonText.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
     const parsedData = JSON.parse(responseJsonText);
-    
+    _t.gemini = Date.now(); // fim da chamada ao Gemini (OCR + análise + parse)
+
     // Garante a estrutura mínima de "imovel" para não quebrar a renderização na interface
     const imovelSafe = parsedData.imovel || {};
     const finalResult = {
@@ -1674,7 +1691,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
     };
 
     // Custo real deste processamento (tokens reais reportados pela API + câmbio ao vivo)
-    finalResult.custo = calcularCusto(parsedRaw.usageMetadata);
+    finalResult.custo = calcularCusto(parsedRaw.usageMetadata, modeloUsado);
 
     // CEP: (1) do documento; (2) ViaCEP pelo logradouro; (3) CEP geral do município (validado)
     if (!finalResult.imovel.cep) {
@@ -1686,6 +1703,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       }
       finalResult.imovel.cep = cepFinal ? (cepFinal + ' (' + fonte + ')') : 'Não localizado';
     }
+    _t.cep = Date.now(); // fim da resolução de CEP (ViaCEP + fallback município)
 
     // CNS do cartório: (1) do documento; (2) derivado do CNM (6 dígitos iniciais);
     // (3) consulta na aba "CNS Cartório Base BRDE" por comarca/UF.
@@ -1702,9 +1720,11 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         finalResult.imovel.cns = cnsBase ? (cnsBase + ' (base BRDE)') : '';
       }
     }
+    _t.cns = Date.now(); // fim da resolução de CNS (documento/CNM/base BRDE)
 
     // Grava (ou mescla, se a matrícula já existir) no banco
     const resultado = registrarOuMesclar(finalResult);
+    _t.reg = Date.now(); // fim da gravação/mesclagem na planilha
 
     // Salva o arquivo importado no Drive (renomeado com o ID do Lote), se configurado
     if (fileBase64 && fileBase64.trim() !== "") {
@@ -1720,6 +1740,18 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         // Não interrompe a análise se o Drive falhar (ex.: pasta inválida ou sem permissão)
       }
     }
+    _t.drive = Date.now(); // fim do salvamento do arquivo no Drive
+
+    // Resumo de tempos por etapa (ms). Visível em "Execuções" do Apps Script.
+    // Serve para identificar o gargalo real (Gemini x CEP x CNS x planilha x Drive).
+    try {
+      console.log('[TEMPO] Gemini=' + _ms(_t.ini, _t.gemini) + 'ms | ' +
+        'CEP=' + _ms(_t.gemini, _t.cep) + 'ms | ' +
+        'CNS=' + _ms(_t.cep, _t.cns) + 'ms | ' +
+        'Planilha=' + _ms(_t.cns, _t.reg) + 'ms | ' +
+        'Drive=' + _ms(_t.reg, _t.drive) + 'ms | ' +
+        'TOTAL=' + _ms(_t.ini, _t.drive) + 'ms');
+    } catch (e) {}
 
     return resultado;
 
