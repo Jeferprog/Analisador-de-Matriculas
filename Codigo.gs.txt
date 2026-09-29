@@ -22,6 +22,15 @@ const PROP_ADMINS = 'CRESOL_ADMINS_JSON';
 const ADMIN_INICIAL = 'cooperar.comite@cresolsicoper.com.br';
 const ABA_ADMINS = 'ADMINS'; // aba da planilha onde os admins ficam salvos (base durável)
 
+// Central de Ferramentas (controle de acesso centralizado da Cresol).
+// A planilha da Central é SOMENTE LEITURA para este sistema. Quando configurada,
+// ela decide quem pode acessar o painel; sem ela, o sistema usa o controle local
+// (aba ADMINS) como fallback, preservando o comportamento atual.
+const PROP_CENTRAL_ID = 'CENTRAL_FERRAMENTAS_ID'; // ID da planilha da Central (ScriptProperties)
+const PROP_PAINEL_ID = 'CENTRAL_PAINEL_ID';       // ID deste sistema em db_paineis (ScriptProperties)
+const PAINEL_ID_PADRAO = '';                       // opcional: fixe aqui o ID_Painel deste sistema
+const CACHE_ACESSO_SEG = 300;                      // TTL do cache de decisão de acesso (5 min)
+
 /**
  * E-mail do usuário logado (domínio Cresol), em minúsculas. Vazio se não for possível identificar.
  */
@@ -95,15 +104,28 @@ function isAdmin(email) {
 }
 
 /**
- * Sessão do usuário para a interface: e-mail, se é admin e (para admins) a lista de admins.
+ * Sessão do usuário para a interface. Resolve o acesso pela Central de Ferramentas
+ * (quando configurada) com fallback no controle local (aba ADMINS). Retorna:
+ * - authorized: pode acessar o sistema
+ * - isAdmin: pode usar Importação IA e Configurações
+ * - perfil/motivo/fonte: contexto da decisão (exibido na interface)
  */
 function getSessao() {
   const email = getUsuarioAtual();
-  const admin = isAdmin(email);
+  const acesso = resolverAcesso(email);
   return {
     email: email,
-    isAdmin: admin,
-    admins: admin ? getAdmins() : []
+    authorized: acesso.authorized,
+    isAdmin: acesso.isAdmin,
+    perfil: acesso.perfil || '',
+    motivo: acesso.motivo || '',
+    fonte: acesso.fonte || '',
+    usaCentral: acesso.usaCentral === true,
+    centralConfigured: !!getCentralFerramentasId(),
+    admins: acesso.isAdmin ? getAdmins() : [],
+    // Dados de configuração da Central (apenas para admins, que configuram)
+    centralId: acesso.isAdmin ? getCentralFerramentasId() : '',
+    painelId: acesso.isAdmin ? getPainelId() : ''
   };
 }
 
@@ -111,11 +133,26 @@ function getSessao() {
  * Barreira de segurança: lança erro se o chamador não for administrador.
  * Usada nas funções sensíveis (Importação IA e Configurações).
  */
+/**
+ * Barreira de acesso ao sistema (leitura): lança erro se o usuário não estiver
+ * autorizado pela Central de Ferramentas (ou pelo fallback local). Impede que um
+ * usuário sem permissão puxe a base chamando as funções diretamente.
+ */
+function exigirAcesso() {
+  const email = getUsuarioAtual();
+  const acesso = resolverAcesso(email);
+  if (!acesso.authorized) {
+    throw new Error('Acesso não autorizado' + (acesso.motivo ? ': ' + acesso.motivo : '') + (email ? ' (' + email + ')' : '') + '.');
+  }
+  return email;
+}
+
 function exigirAdmin() {
   const email = getUsuarioAtual();
-  if (!isAdmin(email)) {
+  const acesso = resolverAcesso(email);
+  if (!acesso.isAdmin) {
     const detalhe = email
-      ? ' (' + email + ')'
+      ? ' (' + email + (acesso.motivo ? ' — ' + acesso.motivo : '') + ')'
       : '. Não foi possível identificar seu e-mail — verifique se está logado com a conta Cresol e se o app está publicado com acesso restrito ao domínio.';
     throw new Error('Acesso restrito: apenas administradores podem executar esta ação' + detalhe);
   }
@@ -144,6 +181,7 @@ function adicionarAdmin(email) {
     lista.push(e);
     props.setProperty(PROP_ADMINS, JSON.stringify(lista));
   }
+  _bumpAcessoGen(); // invalida o cache de decisão de acesso
   return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' cadastrado com sucesso.' };
 }
 
@@ -172,7 +210,300 @@ function removerAdmin(email) {
     lista = lista.filter(function(x) { return String(x).trim().toLowerCase() !== e; });
     props.setProperty(PROP_ADMINS, JSON.stringify(lista));
   }
+  _bumpAcessoGen(); // invalida o cache de decisão de acesso
   return { success: true, admins: getAdmins(), message: 'Administrador ' + e + ' removido.' };
+}
+
+/* =========================================================================
+ * CENTRAL DE FERRAMENTAS — controle de acesso centralizado (somente leitura)
+ * Segue o "Guia de Integração — Central de Ferramentas" (padrão interno Cresol).
+ * ========================================================================= */
+
+/**
+ * ID da planilha da Central de Ferramentas (ScriptProperties). Vazio = não configurada.
+ */
+function getCentralFerramentasId() {
+  return PropertiesService.getScriptProperties().getProperty(PROP_CENTRAL_ID) || '';
+}
+
+/**
+ * Define o ID (ou URL) da planilha da Central de Ferramentas. Somente admin.
+ */
+function setCentralFerramentasId(id) {
+  exigirAdmin();
+  const props = PropertiesService.getScriptProperties();
+  const v = String(id || '').trim();
+  if (!v) {
+    props.deleteProperty(PROP_CENTRAL_ID); // limpa = volta ao controle local
+  } else {
+    props.setProperty(PROP_CENTRAL_ID, v);
+  }
+  _bumpAcessoGen(); // invalida o cache de decisão de acesso
+  return { success: true, centralId: getCentralFerramentasId() };
+}
+
+/**
+ * ID deste sistema em db_paineis (ScriptProperties, com fallback na constante).
+ */
+function getPainelId() {
+  return PropertiesService.getScriptProperties().getProperty(PROP_PAINEL_ID) || PAINEL_ID_PADRAO || '';
+}
+
+/**
+ * Define o ID_Painel deste sistema. Somente admin.
+ */
+function setPainelId(id) {
+  exigirAdmin();
+  const props = PropertiesService.getScriptProperties();
+  const v = String(id || '').trim();
+  if (!v) {
+    props.deleteProperty(PROP_PAINEL_ID);
+  } else {
+    props.setProperty(PROP_PAINEL_ID, v);
+  }
+  _bumpAcessoGen();
+  return { success: true, painelId: getPainelId() };
+}
+
+/**
+ * Salva de uma vez o ID da Central e o ID do Painel (usado pela interface). Somente admin.
+ */
+function salvarConfigCentral(centralId, painelId) {
+  exigirAdmin();
+  const props = PropertiesService.getScriptProperties();
+  const c = String(centralId || '').trim();
+  const p = String(painelId || '').trim();
+  if (c) props.setProperty(PROP_CENTRAL_ID, c); else props.deleteProperty(PROP_CENTRAL_ID);
+  if (p) props.setProperty(PROP_PAINEL_ID, p); else props.deleteProperty(PROP_PAINEL_ID);
+  _bumpAcessoGen();
+  return {
+    success: true,
+    centralId: getCentralFerramentasId(),
+    painelId: getPainelId(),
+    message: c
+      ? 'Central de Ferramentas configurada. O acesso passa a ser controlado por ela.'
+      : 'Central de Ferramentas desligada. O sistema usará o controle de acesso local (aba ADMINS).'
+  };
+}
+
+/**
+ * Geração do cache de acesso. Trocá-la invalida todas as decisões em cache.
+ */
+function _acessoGen() {
+  const p = PropertiesService.getScriptProperties();
+  let g = p.getProperty('ACESSO_CACHE_GEN');
+  if (!g) { g = '1'; p.setProperty('ACESSO_CACHE_GEN', g); }
+  return g;
+}
+function _bumpAcessoGen() {
+  const p = PropertiesService.getScriptProperties();
+  const atual = parseInt(p.getProperty('ACESSO_CACHE_GEN') || '1', 10) || 1;
+  p.setProperty('ACESSO_CACHE_GEN', String(atual + 1));
+}
+
+/**
+ * Lê uma aba da planilha como lista de objetos {cabeçalho: valor}. Aba inexistente = [].
+ */
+function _readSheetCentral(ss, sheetName) {
+  const ws = ss.getSheetByName(sheetName);
+  if (!ws) return [];
+  const data = ws.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const headers = data[0];
+  const rows = [];
+  for (let i = 1; i < data.length; i++) {
+    const obj = {};
+    for (let j = 0; j < headers.length; j++) obj[headers[j]] = data[i][j];
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/**
+ * Consulta a Central de Ferramentas para decidir o acesso de um e-mail a ESTE painel.
+ * Retorna { usaCentral, autorizado, admin, perfil, motivo }.
+ * Se a Central não estiver configurada/acessível, usaCentral=false (cai no fallback local).
+ */
+function verificarAcessoCentral(email) {
+  const cfId = getCentralFerramentasId();
+  if (!cfId) return { usaCentral: false, motivo: 'Central de Ferramentas não configurada' };
+
+  let ss;
+  try {
+    ss = abrirPlanilha(cfId);
+  } catch (e) {
+    return { usaCentral: false, motivo: 'Não foi possível abrir a Central: ' + (e && e.message ? e.message : e) };
+  }
+
+  const emailLower = String(email || '').toLowerCase().trim();
+  if (!emailLower) return { usaCentral: true, autorizado: false, admin: false, motivo: 'E-mail não identificado' };
+
+  // 1. Admin da Central (db_admins) → acesso total
+  const admins = _readSheetCentral(ss, 'db_admins');
+  for (let a = 0; a < admins.length; a++) {
+    if (String(admins[a].Email || '').toLowerCase().trim() === emailLower &&
+        String(admins[a].Status || '').toLowerCase() === 'ativo') {
+      return { usaCentral: true, autorizado: true, admin: true, perfil: 'Admin Central', motivo: 'Administrador da Central de Ferramentas' };
+    }
+  }
+
+  // 2. Buscar colaborador (db_colaboradores)
+  const colaboradores = _readSheetCentral(ss, 'db_colaboradores');
+  let colab = null;
+  for (let c = 0; c < colaboradores.length; c++) {
+    if (String(colaboradores[c].Email || '').toLowerCase().trim() === emailLower) { colab = colaboradores[c]; break; }
+  }
+  if (!colab) return { usaCentral: true, autorizado: false, admin: false, motivo: 'Colaborador não encontrado na base' };
+  if (String(colab.Status || '').toLowerCase() !== 'ativo') {
+    return { usaCentral: true, autorizado: false, admin: false, motivo: 'Colaborador inativo' };
+  }
+
+  // 3. Classe do cargo (map_cargo_classe)
+  const mapCargo = _readSheetCentral(ss, 'map_cargo_classe');
+  let classeId = null;
+  const cargoBruto = String(colab.Cargo_Bruto || '');
+  for (let m = 0; m < mapCargo.length; m++) {
+    if (String(mapCargo[m].Cargo_Bruto || '') === cargoBruto) { classeId = String(mapCargo[m].ID_Classe || ''); break; }
+  }
+
+  // 4. Acesso soberano (cfg_classes_cargo)
+  const classes = _readSheetCentral(ss, 'cfg_classes_cargo');
+  let classeObj = null, classeNome = '';
+  if (classeId) {
+    for (let cl = 0; cl < classes.length; cl++) {
+      if (String(classes[cl].ID_Classe || '') === classeId) {
+        classeObj = classes[cl]; classeNome = String(classeObj.Nome_Classe || ''); break;
+      }
+    }
+  }
+  const acessoSoberano = classeObj && (classeObj.Acesso_Soberano === true || String(classeObj.Acesso_Soberano).toUpperCase() === 'TRUE');
+
+  // 5. Regras do painel (db_paineis)
+  const painelId = getPainelId();
+  if (!painelId) return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'ID do painel deste sistema não configurado' };
+  const paineis = _readSheetCentral(ss, 'db_paineis');
+  let painel = null;
+  for (let p = 0; p < paineis.length; p++) {
+    if (String(paineis[p].ID_Painel || '') === painelId) { painel = paineis[p]; break; }
+  }
+  if (!painel) return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Painel não encontrado na Central' };
+  if (String(painel.Status || '').toLowerCase() !== 'publicado') {
+    return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Painel não publicado' };
+  }
+
+  // 6. Soberano ignora restrições (acesso de nível administrativo)
+  if (acessoSoberano) {
+    return { usaCentral: true, autorizado: true, admin: true, perfil: classeNome, motivo: 'Acesso soberano — ' + classeNome };
+  }
+
+  const escopo = String(painel.Escopo || '').toUpperCase();
+
+  // 7. Escopo SOMENTE_SEDE (cfg_agencias)
+  if (escopo === 'SOMENTE_SEDE') {
+    const agencias = _readSheetCentral(ss, 'cfg_agencias');
+    const agenciaColab = String(colab.ID_Agencia || '');
+    let ehSede = false;
+    for (let ag = 0; ag < agencias.length; ag++) {
+      if (String(agencias[ag].ID_Agencia || '') === agenciaColab) {
+        ehSede = (agencias[ag].Eh_Sede === true || String(agencias[ag].Eh_Sede).toUpperCase() === 'TRUE'); break;
+      }
+    }
+    if (!ehSede) return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Acesso restrito à sede' };
+  }
+
+  const _lista = function(v) {
+    return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  };
+
+  // 8. Classes bloqueadas
+  const classesBloqueadas = _lista(painel.Classes_Bloqueadas);
+  if (classeId && classesBloqueadas.indexOf(classeId) >= 0) {
+    return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Classe bloqueada para este painel' };
+  }
+
+  // 9. Classes permitidas
+  const classesPermitidas = _lista(painel.Classes_Permitidas);
+  if (classesPermitidas.length > 0 && classeId && classesPermitidas.indexOf(classeId) < 0) {
+    return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Classe não autorizada' };
+  }
+
+  // 10. Setores administrativos específicos
+  const setoresEsp = _lista(painel.Setores_Administrativos_Especificos);
+  if (setoresEsp.length > 0) {
+    const setoresColab = _lista(colab.IDs_Setores_Administrativos);
+    let temSetor = false;
+    for (let se = 0; se < setoresEsp.length; se++) {
+      if (setoresColab.indexOf(setoresEsp[se]) >= 0) { temSetor = true; break; }
+    }
+    if (!temSetor && classesPermitidas.length === 0) {
+      return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Setor não autorizado' };
+    }
+  }
+
+  // 11. Agências bloqueadas
+  const agBloqueadas = _lista(painel.Agencias_Bloqueadas);
+  if (agBloqueadas.indexOf(String(colab.ID_Agencia || '')) >= 0) {
+    return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Agência bloqueada' };
+  }
+
+  return { usaCentral: true, autorizado: true, admin: false, perfil: classeNome, motivo: 'Acesso autorizado' };
+}
+
+/**
+ * Decisão unificada de acesso, com cache curto (CacheService) para não reler a Central
+ * a cada ação. Ordem: (1) admin local (master + aba ADMINS) → nunca trava por falha da
+ * Central; (2) Central de Ferramentas; (3) fallback local (mantém o comportamento atual:
+ * qualquer usuário logado acessa como Consulta quando a Central não está configurada).
+ * Retorna { authorized, isAdmin, perfil, motivo, fonte, usaCentral }.
+ */
+function resolverAcesso(email) {
+  const emailLower = String(email || '').trim().toLowerCase();
+  const cache = CacheService.getScriptCache();
+  const chave = 'acesso_v' + _acessoGen() + '_' + (emailLower || 'anon');
+
+  try {
+    const hit = cache.get(chave);
+    if (hit) return JSON.parse(hit);
+  } catch (e) { /* cache indisponível: segue sem cache */ }
+
+  const resultado = _computarAcesso(emailLower);
+
+  try { cache.put(chave, JSON.stringify(resultado), CACHE_ACESSO_SEG); } catch (e) {}
+  return resultado;
+}
+
+function _computarAcesso(emailLower) {
+  // 1. Admin local (inclui o admin master e a aba ADMINS): acesso garantido,
+  //    mesmo que a Central esteja fora do ar — evita travar a operação.
+  if (emailLower && isAdmin(emailLower)) {
+    return { authorized: true, isAdmin: true, perfil: 'Administrador', motivo: 'Administrador do sistema', fonte: 'local', usaCentral: false };
+  }
+
+  // 2. Central de Ferramentas (quando configurada)
+  let usaCentral = false;
+  try {
+    const r = verificarAcessoCentral(emailLower);
+    if (r && r.usaCentral) {
+      usaCentral = true;
+      return {
+        authorized: r.autorizado === true,
+        isAdmin: r.admin === true,
+        perfil: r.perfil || (r.autorizado ? 'Colaborador' : ''),
+        motivo: r.motivo || '',
+        fonte: 'central',
+        usaCentral: true
+      };
+    }
+  } catch (e) {
+    // Falha ao consultar a Central: cai no fallback local
+  }
+
+  // 3. Fallback local: sem Central configurada, preserva o comportamento atual —
+  //    qualquer usuário logado com e-mail acessa como Consulta.
+  if (emailLower) {
+    return { authorized: true, isAdmin: false, perfil: 'Consulta', motivo: 'Acesso local (Central não configurada)', fonte: 'local', usaCentral: false };
+  }
+  return { authorized: false, isAdmin: false, perfil: '', motivo: 'E-mail não identificado', fonte: 'local', usaCentral: usaCentral };
 }
 
 /**
@@ -419,8 +750,9 @@ function encontrarAnalise(id) {
  * Caso haja Planilha conectada, lê as análises dela. Caso contrário, retorna um histórico mockado robusto.
  */
 function listarAnalises() {
+  exigirAcesso(); // Bloqueia leitura da base por usuários não autorizados na Central
   const config = getSystemConfig();
-  
+
   if (config.spreadsheetUrl) {
     try {
       const ss = abrirPlanilha(config.spreadsheetUrl);
