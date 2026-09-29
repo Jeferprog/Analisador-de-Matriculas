@@ -88,6 +88,22 @@
     <div id="toast-text" class="text-sm font-medium"></div>
   </div>
 
+  <!-- ACESSO NEGADO (Central de Ferramentas) -->
+  <div id="access-denied" class="hidden fixed inset-0 z-[60] bg-bg-body flex items-center justify-center p-6">
+    <div class="bg-white rounded-2xl soft-shadow border border-border-gray max-w-md w-full p-8 text-center">
+      <div class="mx-auto w-14 h-14 rounded-full bg-danger-red/10 flex items-center justify-center mb-4">
+        <i data-lucide="shield-x" class="w-7 h-7 text-danger-red"></i>
+      </div>
+      <h1 class="text-xl font-bold text-primary-green">Acesso não autorizado</h1>
+      <p class="text-sm text-text-gray mt-2">Seu acesso a esta ferramenta é controlado pela <strong>Central de Ferramentas</strong> da Cresol.</p>
+      <div class="mt-5 text-left bg-bg-body rounded-lg p-4 space-y-2">
+        <div class="text-xs"><span class="font-bold text-text-dark uppercase tracking-wider">Usuário:</span> <span id="denied-email" class="text-text-gray break-all">não identificado</span></div>
+        <div class="text-xs"><span class="font-bold text-text-dark uppercase tracking-wider">Motivo:</span> <span id="denied-motivo" class="text-text-gray">Você não tem permissão para acessar este sistema.</span></div>
+      </div>
+      <p class="text-[11px] text-text-gray mt-5 leading-relaxed">Se você deveria ter acesso, solicite a liberação ao administrador da Central de Ferramentas, informando o e-mail e o motivo acima.</p>
+    </div>
+  </div>
+
   <!-- SIDEBAR NAVIGATION -->
   <aside class="w-full md:w-64 bg-white border-r border-border-gray flex flex-col shrink-0">
     <div class="p-6 border-b border-border-gray flex flex-col gap-1">
@@ -768,14 +784,48 @@
             </div>
           </div>
 
-          <!-- Administradores (controle de acesso) -->
+          <!-- Central de Ferramentas (controle de acesso centralizado) -->
+          <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden lg:col-span-2">
+            <div class="p-6 border-b border-border-gray">
+              <h3 class="font-bold text-primary-green flex items-center gap-2 text-sm uppercase tracking-wider">
+                <i data-lucide="building-2" class="w-4.5 h-4.5 text-accent-orange"></i>
+                Central de Ferramentas
+              </h3>
+              <p class="text-xs text-text-gray mt-1">Controle de acesso centralizado da Cresol. Com a Central configurada, o acesso ao sistema passa a ser decidido por ela (classes, painel, agência/sede e setores). Sem ela, vale o <strong>controle local</strong> logo abaixo. A planilha da Central é usada <strong>somente para leitura</strong>.</p>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">ID (ou URL) da Planilha da Central</label>
+                  <input type="text" id="config-central-id" placeholder="Cole o ID ou a URL da planilha da Central" class="w-full border border-border-gray rounded-lg p-2.5 text-sm font-mono outline-none focus:ring-1 focus:ring-primary-green">
+                  <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">Deixe em branco para desligar a Central e usar apenas o controle local.</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">ID do Painel (db_paineis)</label>
+                  <input type="text" id="config-central-painel" placeholder="ID_Painel deste sistema" class="w-full border border-border-gray rounded-lg p-2.5 text-sm font-mono outline-none focus:ring-1 focus:ring-primary-green">
+                  <p class="text-[10px] text-text-gray mt-1.5 leading-relaxed">Consulte a aba <code>db_paineis</code> da Central e informe o <code>ID_Painel</code> correspondente a este sistema.</p>
+                </div>
+              </div>
+
+              <div id="central-status-badge" class="p-3 rounded-lg bg-bg-body border text-xs flex items-center gap-2">
+                <!-- badge dinâmico -->
+              </div>
+
+              <button onclick="saveCentralConfig()" class="bg-primary-green hover:bg-primary-green/95 text-white font-bold text-xs px-5 py-3 rounded-lg shadow-md transition-all flex items-center gap-2">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span>Salvar Central de Ferramentas</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Administradores (controle de acesso local / fallback) -->
           <div class="bg-white rounded-lg soft-shadow border border-border-gray overflow-hidden lg:col-span-2">
             <div class="p-6 border-b border-border-gray">
               <h3 class="font-bold text-primary-green flex items-center gap-2 text-sm uppercase tracking-wider">
                 <i data-lucide="users-round" class="w-4.5 h-4.5 text-accent-orange"></i>
-                Administradores do Sistema
+                Controle de Acesso Local (Fallback)
               </h3>
-              <p class="text-xs text-text-gray mt-1">Apenas administradores acessam as abas <strong>Importação IA</strong> e <strong>Configurações</strong>. O acesso é definido pelo e-mail logado (conta Cresol). A lista fica salva na aba <strong>ADMINS</strong> da planilha — dá para editá-la direto por lá também.</p>
+              <p class="text-xs text-text-gray mt-1">Administradores locais sempre acessam as abas <strong>Importação IA</strong> e <strong>Configurações</strong> — inclusive quando a Central está fora do ar (rede de segurança). O acesso é definido pelo e-mail logado (conta Cresol) e a lista fica salva na aba <strong>ADMINS</strong> da planilha — dá para editá-la direto por lá também.</p>
             </div>
             <div class="p-6 space-y-4">
               <div class="flex flex-col sm:flex-row gap-3">
@@ -840,7 +890,7 @@
     let selectedAnalysis = null;
     let selectedFileBase64 = ''; // DataURL do PDF/imagem anexado, enviado à IA para OCR
     let isAnalyzing = false; // impede envios simultâneos enquanto uma análise está em andamento
-    let sessao = { email: '', isAdmin: false, admins: [] }; // usuário logado e perfil
+    let sessao = { email: '', authorized: false, isAdmin: false, admins: [] }; // usuário logado e perfil
     const ANALYZE_TIMEOUT_MS = 360000; // 6 min — limite máximo de execução do Apps Script
     let config = {
       spreadsheetUrl: '',
@@ -860,22 +910,37 @@
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(s) {
-            sessao = s || { email: '', isAdmin: false, admins: [] };
+            sessao = s || { email: '', authorized: false, isAdmin: false, admins: [] };
+            if (!sessao.authorized) { showAccessDenied(); return; }
             applyPermissions();
             loadInitialData();
           })
           .withFailureHandler(function(err) {
-            sessao = { email: '', isAdmin: false, admins: [] };
+            // Falha ao verificar sessão: não bloqueia (pode ser erro transitório),
+            // mas registra e segue como acesso não identificado.
+            sessao = { email: '', authorized: true, isAdmin: false, admins: [], perfil: 'Consulta' };
             applyPermissions();
             loadInitialData();
           })
           .getSessao();
       } else {
         // Preview local (fora do Apps Script): libera tudo para desenvolvimento
-        sessao = { email: 'preview@local', isAdmin: true, admins: [] };
+        sessao = { email: 'preview@local', authorized: true, isAdmin: true, admins: [], perfil: 'Administrador' };
         applyPermissions();
         loadInitialData();
       }
+    }
+
+    // Exibe a tela de Acesso Negado (controle da Central de Ferramentas) e oculta o app
+    function showAccessDenied() {
+      try { hideLoading(); } catch (e) {}
+      const overlay = document.getElementById('access-denied');
+      const emailEl = document.getElementById('denied-email');
+      const motivoEl = document.getElementById('denied-motivo');
+      if (emailEl) emailEl.innerText = (sessao && sessao.email) ? sessao.email : 'não identificado';
+      if (motivoEl) motivoEl.innerText = (sessao && sessao.motivo) ? sessao.motivo : 'Você não tem permissão para acessar este sistema.';
+      if (overlay) overlay.classList.remove('hidden');
+      try { lucide.createIcons(); } catch (e) {}
     }
 
     // Aplica as permissões de perfil na interface
@@ -893,7 +958,8 @@
       const roleEl = document.getElementById('user-role');
       if (emailEl) emailEl.innerText = (sessao && sessao.email) ? sessao.email : 'não identificado';
       if (roleEl) {
-        roleEl.innerText = admin ? 'Administrador' : 'Consulta';
+        const perfil = (sessao && sessao.perfil) ? sessao.perfil : (admin ? 'Administrador' : 'Consulta');
+        roleEl.innerText = perfil;
         roleEl.className = "text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded " +
           (admin ? 'bg-primary-green text-white' : 'bg-bg-body text-text-gray');
       }
@@ -902,7 +968,27 @@
       if (!admin && (currentView === 'importacao' || currentView === 'configuracoes')) {
         switchView('dashboard');
       }
-      if (admin) renderAdmins();
+      if (admin) { renderAdmins(); applyCentralToUI(); }
+    }
+
+    // Preenche os campos da Central de Ferramentas com o que está configurado
+    function applyCentralToUI() {
+      const idEl = document.getElementById('config-central-id');
+      const painelEl = document.getElementById('config-central-painel');
+      const statusEl = document.getElementById('central-status-badge');
+      if (idEl) idEl.value = (sessao && sessao.centralId) ? sessao.centralId : '';
+      if (painelEl) painelEl.value = (sessao && sessao.painelId) ? sessao.painelId : '';
+      if (statusEl) {
+        const ativa = !!(sessao && sessao.centralConfigured);
+        if (ativa) {
+          statusEl.className = "p-3 rounded-lg bg-success-green/10 text-success-green border border-success-green/20 text-xs flex items-center gap-2";
+          statusEl.innerHTML = '<i data-lucide="check-circle" class="w-4 h-4"></i> <strong>Central ativa.</strong> O acesso é controlado pela Central de Ferramentas; a lista local abaixo funciona como fallback.';
+        } else {
+          statusEl.className = "p-3 rounded-lg bg-bg-body text-text-gray border border-border-gray text-xs flex items-center gap-2";
+          statusEl.innerHTML = '<i data-lucide="info" class="w-4 h-4"></i> <strong>Central não configurada.</strong> O acesso usa apenas o controle local (aba ADMINS) abaixo.';
+        }
+        try { lucide.createIcons(); } catch (e) {}
+      }
     }
 
     // Load initial config and analyses from Google Apps Script
@@ -1682,6 +1768,42 @@
           document.getElementById('config-gemini-key').value = '';
           showToast("success", "Simulação: chaves de teste atualizadas!");
         }, 1000);
+      }
+    }
+
+    // ===== Central de Ferramentas =====
+    function saveCentralConfig() {
+      const centralId = (document.getElementById('config-central-id').value || '').trim();
+      const painelId = (document.getElementById('config-central-painel').value || '').trim();
+      if (centralId && !painelId) {
+        showToast("error", "Informe também o ID do Painel (db_paineis) para a Central controlar o acesso.");
+        return;
+      }
+      showLoading("Salvando configuração da Central de Ferramentas...");
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            sessao.centralId = res.centralId || '';
+            sessao.painelId = res.painelId || '';
+            sessao.centralConfigured = !!res.centralId;
+            applyCentralToUI();
+            hideLoading();
+            showToast("success", res.message || "Central de Ferramentas atualizada!");
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            showToast("error", "Erro ao salvar a Central: " + err);
+          })
+          .salvarConfigCentral(centralId, painelId);
+      } else {
+        setTimeout(function() {
+          sessao.centralId = centralId;
+          sessao.painelId = painelId;
+          sessao.centralConfigured = !!centralId;
+          applyCentralToUI();
+          hideLoading();
+          showToast("success", "Simulação: Central de Ferramentas atualizada!");
+        }, 800);
       }
     }
 
