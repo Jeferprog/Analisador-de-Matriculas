@@ -322,6 +322,18 @@ function _readSheetCentral(ss, sheetName) {
 /**
  * Consulta a Central de Ferramentas para decidir o acesso de um e-mail a ESTE painel.
  * Retorna { usaCentral, autorizado, admin, perfil, motivo }.
+ *
+ * Política (duas faixas: Administrador e Consulta):
+ * - Todo colaborador ATIVO de um painel PUBLICADO tem, no mínimo, acesso de CONSULTA.
+ *   Cargos fora da lista Classes_Permitidas (ou em Classes_Bloqueadas) NÃO são barrados:
+ *   ficam como Consulta.
+ * - Acesso de ADMINISTRADOR é concedido quando: é Admin da Central (db_admins), tem
+ *   Acesso Soberano, OU a classe está em Classes_Permitidas (e não em Classes_Bloqueadas).
+ *   As regras de lotação (Escopo SOMENTE_SEDE, Agencias_Bloqueadas, setores específicos)
+ *   apenas rebaixam o acesso elevado para Consulta — nunca negam o acesso.
+ * - Negam o acesso (tela de Acesso Negado) apenas: e-mail não identificado, colaborador
+ *   não encontrado/inativo e painel não configurado/não encontrado/não publicado.
+ *
  * Se a Central não estiver configurada/acessível, usaCentral=false (cai no fallback local).
  */
 function verificarAcessoCentral(email) {
@@ -391,62 +403,70 @@ function verificarAcessoCentral(email) {
     return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Painel não publicado' };
   }
 
-  // 6. Soberano ignora restrições (acesso de nível administrativo)
+  // A PARTIR DAQUI: colaborador ATIVO de painel PUBLICADO sempre tem ao menos
+  // acesso de CONSULTA. As regras de cargo/lotação abaixo decidem apenas se o
+  // acesso é elevado para ADMINISTRADOR — elas NUNCA negam o acesso (um cargo
+  // bloqueado ou fora da lista de permitidas fica como Consulta, não barrado).
+
+  // 6. Acesso soberano → sempre Administrador
   if (acessoSoberano) {
     return { usaCentral: true, autorizado: true, admin: true, perfil: classeNome, motivo: 'Acesso soberano — ' + classeNome };
-  }
-
-  const escopo = String(painel.Escopo || '').toUpperCase();
-
-  // 7. Escopo SOMENTE_SEDE (cfg_agencias)
-  if (escopo === 'SOMENTE_SEDE') {
-    const agencias = _readSheetCentral(ss, 'cfg_agencias');
-    const agenciaColab = String(colab.ID_Agencia || '');
-    let ehSede = false;
-    for (let ag = 0; ag < agencias.length; ag++) {
-      if (String(agencias[ag].ID_Agencia || '') === agenciaColab) {
-        ehSede = (agencias[ag].Eh_Sede === true || String(agencias[ag].Eh_Sede).toUpperCase() === 'TRUE'); break;
-      }
-    }
-    if (!ehSede) return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Acesso restrito à sede' };
   }
 
   const _lista = function(v) {
     return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
   };
 
-  // 8. Classes bloqueadas
-  const classesBloqueadas = _lista(painel.Classes_Bloqueadas);
-  if (classeId && classesBloqueadas.indexOf(classeId) >= 0) {
-    return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Classe bloqueada para este painel' };
-  }
-
-  // 9. Classes permitidas
+  // 7. Administrador por CLASSE PERMITIDA: a classe precisa estar em
+  //    Classes_Permitidas e não estar em Classes_Bloqueadas. Sem classe
+  //    identificada ou sem lista de permitidas, o padrão é Consulta.
   const classesPermitidas = _lista(painel.Classes_Permitidas);
-  if (classesPermitidas.length > 0 && classeId && classesPermitidas.indexOf(classeId) < 0) {
-    return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Classe não autorizada' };
-  }
+  const classesBloqueadas = _lista(painel.Classes_Bloqueadas);
+  let ehAdmin = !!classeId &&
+    classesPermitidas.indexOf(classeId) >= 0 &&
+    classesBloqueadas.indexOf(classeId) < 0;
+  let motivoConsulta = 'Acesso de consulta' + (classeNome ? ' — ' + classeNome : '');
 
-  // 10. Setores administrativos específicos
-  const setoresEsp = _lista(painel.Setores_Administrativos_Especificos);
-  if (setoresEsp.length > 0) {
-    const setoresColab = _lista(colab.IDs_Setores_Administrativos);
-    let temSetor = false;
-    for (let se = 0; se < setoresEsp.length; se++) {
-      if (setoresColab.indexOf(setoresEsp[se]) >= 0) { temSetor = true; break; }
+  // 8. Gates de LOTAÇÃO para acesso elevado: quando aplicáveis, rebaixam o
+  //    acesso de Administrador para Consulta (continuam sem negar o acesso).
+  if (ehAdmin) {
+    const escopo = String(painel.Escopo || '').toUpperCase();
+    if (escopo === 'SOMENTE_SEDE') {
+      const agencias = _readSheetCentral(ss, 'cfg_agencias');
+      const agenciaColab = String(colab.ID_Agencia || '');
+      let ehSede = false;
+      for (let ag = 0; ag < agencias.length; ag++) {
+        if (String(agencias[ag].ID_Agencia || '') === agenciaColab) {
+          ehSede = (agencias[ag].Eh_Sede === true || String(agencias[ag].Eh_Sede).toUpperCase() === 'TRUE'); break;
+        }
+      }
+      if (!ehSede) { ehAdmin = false; motivoConsulta = 'Consulta — administração restrita à sede'; }
     }
-    if (!temSetor && classesPermitidas.length === 0) {
-      return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Setor não autorizado' };
+  }
+
+  if (ehAdmin) {
+    const agBloqueadas = _lista(painel.Agencias_Bloqueadas);
+    if (agBloqueadas.indexOf(String(colab.ID_Agencia || '')) >= 0) {
+      ehAdmin = false; motivoConsulta = 'Consulta — agência sem acesso administrativo';
     }
   }
 
-  // 11. Agências bloqueadas
-  const agBloqueadas = _lista(painel.Agencias_Bloqueadas);
-  if (agBloqueadas.indexOf(String(colab.ID_Agencia || '')) >= 0) {
-    return { usaCentral: true, autorizado: false, admin: false, perfil: classeNome, motivo: 'Agência bloqueada' };
+  if (ehAdmin) {
+    const setoresEsp = _lista(painel.Setores_Administrativos_Especificos);
+    if (setoresEsp.length > 0) {
+      const setoresColab = _lista(colab.IDs_Setores_Administrativos);
+      let temSetor = false;
+      for (let se = 0; se < setoresEsp.length; se++) {
+        if (setoresColab.indexOf(setoresEsp[se]) >= 0) { temSetor = true; break; }
+      }
+      if (!temSetor) { ehAdmin = false; motivoConsulta = 'Consulta — setor sem acesso administrativo'; }
+    }
   }
 
-  return { usaCentral: true, autorizado: true, admin: false, perfil: classeNome, motivo: 'Acesso autorizado' };
+  if (ehAdmin) {
+    return { usaCentral: true, autorizado: true, admin: true, perfil: classeNome, motivo: 'Classe autorizada para administração — ' + classeNome };
+  }
+  return { usaCentral: true, autorizado: true, admin: false, perfil: classeNome || 'Consulta', motivo: motivoConsulta };
 }
 
 /**
