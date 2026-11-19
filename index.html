@@ -363,7 +363,7 @@
               <div>
                 <label class="block text-xs font-bold text-text-dark mb-1.5 uppercase">Modelo IA</label>
                 <select id="param-model" class="w-full border border-border-gray rounded-lg p-2.5 text-xs bg-white outline-none">
-                  <option value="Especialista Imobiliário v4">Especialista Imobiliário v4 (Cresol Geral)</option>
+                  <option value="Especialista Imobiliário v5">Especialista Imobiliário v5 (Cresol Geral)</option>
                   <option value="Análise de Risco Rural v2">Análise de Risco Rural v2 (Agronegócio)</option>
                   <option value="Diligência Expressa">Diligência Expressa (Análise Veloz)</option>
                 </select>
@@ -545,6 +545,39 @@
                   <div id="info-incra-wrap" class="hidden">
                     <span class="text-xs text-text-gray uppercase font-bold">Cadastro INCRA / CCIR</span>
                     <p id="info-incra" data-path="imovel.cadastroIncra" class="editable-field font-semibold text-text-dark"></p>
+                  </div>
+                  <div id="info-registro-wrap" class="hidden space-y-3 border-t border-border-gray pt-3">
+                    <span class="text-[10px] text-accent-orange uppercase font-black tracking-wider">Dados Registrais (contratos)</span>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <span class="text-xs text-text-gray uppercase font-bold">Livro</span>
+                        <p id="info-livro" data-path="imovel.livro" class="editable-field font-semibold text-text-dark"></p>
+                      </div>
+                      <div>
+                        <span class="text-xs text-text-gray uppercase font-bold">Folha</span>
+                        <p id="info-folha" data-path="imovel.folha" class="editable-field font-semibold text-text-dark"></p>
+                      </div>
+                      <div>
+                        <span class="text-xs text-text-gray uppercase font-bold">Município</span>
+                        <p id="info-municipio" data-path="imovel.municipio" class="editable-field font-semibold text-text-dark"></p>
+                      </div>
+                      <div>
+                        <span class="text-xs text-text-gray uppercase font-bold">UF</span>
+                        <p id="info-uf" data-path="imovel.uf" class="editable-field font-semibold text-text-dark"></p>
+                      </div>
+                    </div>
+                    <div>
+                      <span class="text-xs text-text-gray uppercase font-bold">Denominação / Local</span>
+                      <p id="info-denominacao" data-path="imovel.denominacao" class="editable-field font-semibold text-text-dark"></p>
+                    </div>
+                    <div>
+                      <span class="text-xs text-text-gray uppercase font-bold">CCIR</span>
+                      <p id="info-ccir" data-path="imovel.ccir" class="editable-field font-semibold text-text-dark font-mono"></p>
+                    </div>
+                    <div>
+                      <span class="text-xs text-text-gray uppercase font-bold">NIRF</span>
+                      <p id="info-nirf" class="font-semibold text-text-dark font-mono"></p>
+                    </div>
                   </div>
                 </div>
                 <div class="space-y-3 bg-bg-body p-4 rounded-lg">
@@ -1254,8 +1287,12 @@
 
         const imo = item.imovel || {};
         const props = Array.isArray(item.proprietarios) ? item.proprietarios : [];
-        const nomes = props.length ? props.map(p => esc(p && p.nome ? p.nome : '—')).join('<br>') : '—';
-        const docs = props.length ? props.map(p => esc(p && p.documento ? p.documento : 'Não informado')).join('<br>') : '—';
+        // Mostra os proprietários VIGENTES (partes atuais); registros antigos sem a
+        // marcação exibem todos. A busca continua varrendo todos (inclusive antigos).
+        const propsVig = props.filter(p => p && p.vigente === true);
+        const propsShow = propsVig.length ? propsVig : props;
+        const nomes = propsShow.length ? propsShow.map(p => esc(p && p.nome ? p.nome : '—')).join('<br>') : '—';
+        const docs = propsShow.length ? propsShow.map(p => esc(p && p.documento ? p.documento : 'Não informado')).join('<br>') : '—';
         let dataFmt = '—';
         try { dataFmt = item.timestamp ? new Date(item.timestamp).toLocaleString('pt-BR') : '—'; } catch (e) { dataFmt = String(item.timestamp || '—'); }
 
@@ -1320,14 +1357,33 @@
       if (item.proprietarios && item.proprietarios.length > 0) {
         item.proprietarios.forEach((p, idx) => {
           const sColor = p.status === 'REGULAR' ? 'text-success-green' : p.status === 'ATENÇÃO' ? 'text-accent-orange' : 'text-text-gray';
+          const ehVigente = p.vigente !== false; // default: vigente quando não informado
+          const vigBadge = ehVigente
+            ? `<span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-success-green/15 text-success-green">Vigente</span>`
+            : `<span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-bg-body text-text-gray border border-border-gray">Não vigente</span>`;
+          const rg = (p.rg && (p.rg.numero || p.rg.orgaoEmissor))
+            ? `${esc(p.rg.numero || '—')}${p.rg.orgaoEmissor ? ' ' + esc(p.rg.orgaoEmissor) : ''}` : '';
+          const conj = (p.conjuge && p.conjuge.nome) ? esc(p.conjuge.nome) : '';
+          const extras = [
+            p.nacionalidade ? esc(p.nacionalidade) : '',
+            p.profissao ? esc(p.profissao) : '',
+            rg ? 'RG ' + rg : '',
+            conj ? 'Cônjuge: ' + conj : '',
+            p.enderecoDomicilio ? esc(p.enderecoDomicilio) : '',
+            p.origemAto ? 'Ato: ' + esc(p.origemAto) : ''
+          ].filter(Boolean).join(' · ');
+          const extrasLine = extras ? `<div class="text-[10px] text-text-gray mt-0.5 whitespace-normal">${extras}</div>` : '';
           pTbody.innerHTML += `
-            <tr>
-              <td class="px-4 py-3 font-semibold text-text-dark editable-field" data-path="proprietarios.${idx}.nome">${esc(p.nome || '—')}</td>
+            <tr class="${ehVigente ? '' : 'opacity-60'}">
+              <td class="px-4 py-3 font-semibold text-text-dark min-w-[200px] whitespace-normal">
+                <div class="flex items-center gap-2"><span class="editable-field" data-path="proprietarios.${idx}.nome">${esc(p.nome || '—')}</span> ${vigBadge}</div>
+                ${extrasLine}
+              </td>
               <td class="px-4 py-3 font-mono editable-field" data-path="proprietarios.${idx}.documento">${esc(p.documento || 'Não informado')}</td>
               <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.participacao">${esc(p.participacao || '100%')}</td>
               <td class="px-4 py-3 text-xs leading-relaxed editable-field min-w-[220px] whitespace-normal" data-path="proprietarios.${idx}.descricaoArea">${esc(p.descricaoArea || '—')}</td>
               <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.estadoCivil">${esc(p.estadoCivil || '—')}</td>
-              <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.regimeCasamento">${esc(p.regimeCasamento || '—')}</td>
+              <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.regimeBens">${esc(p.regimeBens || p.regimeCasamento || '—')}</td>
               <td class="px-4 py-3 editable-field" data-path="proprietarios.${idx}.formaAquisicao">${esc(p.formaAquisicao || '—')}</td>
               <td class="px-4 py-3 font-bold ${sColor} editable-field" data-path="proprietarios.${idx}.status">${esc(p.status || '—')}</td>
             </tr>
@@ -1404,6 +1460,23 @@
         incraWrap.classList.remove('hidden');
       } else {
         incraWrap.classList.add('hidden');
+      }
+
+      // Dados Registrais (livro/folha/denominação/município/UF/CCIR/NIRF) — para os contratos
+      const nirfArr = Array.isArray(imo.nirf) ? imo.nirf.filter(Boolean) : (imo.nirf ? [imo.nirf] : []);
+      const temRegistro = !!(imo.livro || imo.folha || imo.municipio || imo.uf || imo.denominacao || imo.ccir || nirfArr.length);
+      const regWrap = document.getElementById('info-registro-wrap');
+      if (temRegistro) {
+        document.getElementById('info-livro').innerText = imo.livro || '—';
+        document.getElementById('info-folha').innerText = imo.folha || '—';
+        document.getElementById('info-municipio').innerText = imo.municipio || '—';
+        document.getElementById('info-uf').innerText = imo.uf || '—';
+        document.getElementById('info-denominacao').innerText = imo.denominacao || '—';
+        document.getElementById('info-ccir').innerText = imo.ccir || '—';
+        document.getElementById('info-nirf').innerText = nirfArr.length ? nirfArr.join(', ') : '—';
+        regWrap.classList.remove('hidden');
+      } else {
+        regWrap.classList.add('hidden');
       }
 
       // Confrontações
