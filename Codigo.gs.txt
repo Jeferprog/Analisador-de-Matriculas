@@ -1063,6 +1063,45 @@ function apenasProprietariosAtuais(lista) {
 }
 
 /**
+ * Prepara a lista de proprietários para o v5: mantém TODOS (inclusive os antigos,
+ * marcados com vigente:false), normaliza o campo 'vigente' e ordena os VIGENTES
+ * primeiro, preservando a ordem relativa dentro de cada grupo.
+ * - Se o modelo não informar 'vigente', infere: status "histórico/anterior" => false; senão true.
+ * - Garante a presença mínima dos novos campos (rg, conjuge) para o gerador de documentos.
+ */
+function prepararProprietarios(lista) {
+  if (!Array.isArray(lista)) return [];
+  const norm = lista.filter(function(p) { return !!p; }).map(function(p) {
+    let vig;
+    if (p.vigente === true || p.vigente === false) {
+      vig = p.vigente;
+    } else if (typeof p.vigente === 'string') {
+      const v = p.vigente.toLowerCase();
+      vig = !(v === 'false' || v === 'nao' || v === 'não' || v === '0' || v === 'n');
+    } else {
+      const st = String(p.status || '').toLowerCase();
+      vig = !(st.indexOf('históric') > -1 || st.indexOf('historic') > -1 || st.indexOf('anterior') > -1);
+    }
+    p.vigente = vig;
+    // Garante estrutura dos objetos aninhados (evita quebra no gerador de documentos)
+    if (!p.rg || typeof p.rg !== 'object') p.rg = { numero: 'Não informado', orgaoEmissor: 'Não informado' };
+    if (!p.conjuge || typeof p.conjuge !== 'object') p.conjuge = { nome: '', documento: 'Não informado' };
+    return p;
+  });
+  // Ordena vigentes primeiro, mantendo a ordem original dentro de cada grupo (sort estável)
+  const vigentes = norm.filter(function(p) { return p.vigente; });
+  const antigos = norm.filter(function(p) { return !p.vigente; });
+  return vigentes.concat(antigos);
+}
+
+/**
+ * Lista apenas os proprietários vigentes (donos da área atual) — atalho para o gerador.
+ */
+function proprietariosVigentes(lista) {
+  return prepararProprietarios(lista).filter(function(p) { return p.vigente; });
+}
+
+/**
  * Extrai a soma de áreas (em m²) mencionadas em um texto, convertendo hectares para m².
  * Reconhece formato brasileiro (43.425,25 m²) e unidades m²/m2/ha/hectare(s).
  */
@@ -1685,7 +1724,11 @@ function montarLinhasRelatorio(dataInicio, dataFim) {
     if ((inicio || fim) && !dt) return; // sem data não entra em filtro por período
 
     const imo = a.imovel || {};
-    const props = Array.isArray(a.proprietarios) ? a.proprietarios : [];
+    const todosProps = Array.isArray(a.proprietarios) ? a.proprietarios : [];
+    // Relatório considera apenas os proprietários VIGENTES (partes atuais). Se o
+    // registro (antigo) não tiver a marcação, cai para a lista inteira por compat.
+    const vigentes = todosProps.filter(function(p) { return p && p.vigente === true; });
+    const props = vigentes.length > 0 ? vigentes : (todosProps.some(function(p){ return p && p.vigente === false; }) ? [] : todosProps);
     const dataEmiss = parseDataEmissao(imo.dataEmissaoCertidao);
     const dataFmt = dataEmiss ? formatarDataBR(dataEmiss) : (imo.dataEmissaoCertidao || '');
     const apta = aptaPara(dataEmiss);
@@ -1789,7 +1832,7 @@ function gerarRelatorioCSV(dataInicio, dataFim) {
  */
 function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
   exigirAdmin(); // Importação IA restrita a administradores
-  const selectedMetodo = metodo || "Especialista Imobiliário v4";
+  const selectedMetodo = metodo || "Especialista Imobiliário v5";
   const name = fileName || "Documento.txt";
   const uniqueId = "CRT-" + Math.floor(1000 + Math.random() * 9000);
   
@@ -1816,6 +1859,8 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "3. Qualificação subjetiva: identifique APENAS os PROPRIETÁRIOS ATUAIS (os titulares do domínio conforme o registro de aquisição MAIS RECENTE), com CPF/CNPJ, participação (% e área quando houver) e estado civil/regime de bens. Proprietários ANTERIORES (que já transmitiram o imóvel) NÃO entram em 'proprietarios' — eles pertencem exclusivamente à 'cadeiaDominial'. Se faltar CPF/CNPJ ou qualificação de alguém, gere alerta de compliance (impacta emissão de CCB/garantia).\n" +
       "3.1. Área por proprietário: para CADA proprietário atual, descreva de forma COMPLETA a área/fração que lhe pertence (campo 'descricaoArea'): quantidade (m² ou ha), localização dentro do imóvel quando delimitada (ex.: 'gleba ao norte, confrontando com...'), e origem da fração (registro que a constituiu).\n" +
       "3.2. Validação da titularidade pelo DIREITO BRASILEIRO: para cada proprietário, identifique o REGIME DE BENS do casamento (comunhão universal — Lei 6.515/77 como marco; comunhão parcial, regime legal desde 1977; separação total/convencional ou obrigatória; participação final nos aquestos; ou união estável) e a FORMA DE AQUISIÇÃO (compra e venda, doação, herança/sucessão, partilha, adjudicação, usucapião, dação em pagamento, permuta, incorporação/integralização). Aplique as regras: na COMUNHÃO PARCIAL, bem adquirido ONEROSAMENTE na constância do casamento comunica-se ao cônjuge (meação), ainda que só um figure na matrícula — mas bens recebidos por HERANÇA ou DOAÇÃO não se comunicam; na COMUNHÃO UNIVERSAL, todos os bens se comunicam (salvo cláusula de incomunicabilidade); na SEPARAÇÃO TOTAL, não há meação. Registre a conclusão no campo 'validacaoTitularidade' de cada proprietário (ex.: 'Casado em comunhão parcial; imóvel adquirido onerosamente na constância — cônjuge detém meação e deverá anuir/outorgar na garantia — art. 1.647 CC'). Se a outorga conjugal for necessária para a garantia, gere também um alerta de ATENÇÃO.\n" +
+      "3.3. QUALIFICAÇÃO COMPLETA das partes (para preenchimento automático de contratos de crédito rural): para CADA proprietário, extraia também, quando constar no texto: 'nacionalidade' (ex.: 'Brasileira'); 'profissao' (ex.: 'Agricultor', 'Produtor Rural'); o RG/Carteira de Identidade em 'rg' como objeto { 'numero', 'orgaoEmissor' } (ex.: 'CI nº 5050306314-SSP/RS' => numero '5050306314', orgaoEmissor 'SSP/RS'); o 'enderecoDomicilio' (residência do proprietário, ex.: 'residente e domiciliado na Linha Cerro dos Narcisos, Venâncio Aires - RS'); e, quando casado, o 'conjuge' como objeto { 'nome', 'documento' } (o CPF do cônjuge quase sempre não consta — use 'Não informado'). IMPORTANTE: o campo 'estadoCivil' deve conter APENAS o estado civil ('Casado', 'Solteiro', 'Viúvo', 'Divorciado'...); o regime de bens vai SEPARADO no campo 'regimeBens' ('Comunhão Universal de Bens', 'Comunhão Parcial de Bens', 'Separação Total de Bens'...). Se o regime não estiver expresso e o imóvel foi adquirido na constância do casamento, use 'Comunhão Parcial de Bens (presumido)'. Preencha também 'origemAto' com o ato que fundamenta a propriedade da pessoa (ex.: 'R-5 (Prot. 114813, 07/07/2015)') para rastreabilidade. NUNCA invente nem deduza CPF ou RG: campo ausente recebe 'Não informado'.\n" +
+      "3.4. PROPRIETÁRIO VIGENTE (ponto crítico — define quem são as PARTES do contrato): determine quem detém a ÁREA ATUAL da matrícula HOJE. Procedimento: (a) identifique a área atual da matrícula (a mais recente, após eventuais desmembramentos/retificações); (b) percorra a cadeia dominial e encontre o ÚLTIMO ato de aquisição que transferiu essa área atual a alguém e que NÃO foi seguido de venda/desmembramento da parte dessa pessoa; (c) os adquirentes desse ato (e seus cônjuges, quando houver meação) recebem 'vigente': true; (d) proprietários de frações já desmembradas, vendidas ou de áreas anteriores recebem 'vigente': false — eles PODEM e DEVEM continuar na lista 'proprietarios', apenas marcados como não vigentes. LISTE SEMPRE os vigentes PRIMEIRO no array 'proprietarios'. Se houver divergência registral que impeça a conclusão segura, marque 'vigente' pela melhor leitura e gere o alerta correspondente em 'alertas' (não resolva a divergência por conta própria).\n" +
       "4. Ônus, gravames e classificação de risco (Fact-Checker de Ônus): faça uma varredura MINUCIOSA por gravames e restrições ATIVAS — hipoteca, alienação fiduciária, penhora, arresto, arrolamento, usufruto, servidão, cláusulas de INALIENABILIDADE, IMPENHORABILIDADE e INCOMUNICABILIDADE, e INDISPONIBILIDADE/bloqueio ou constrição judicial. Liste cada um com registro (R-/AV-), tipo, credor/beneficiário e observação/vencimento. Se estiver livre e desembaraçado, declare isso explicitamente. Em seguida, classifique o campo 'nivelRisco': ALTO quando houver indisponibilidade, bloqueio/constrição judicial, penhora ou cláusula de inalienabilidade/impenhorabilidade (tende a status REJEITADO); MÉDIO quando houver ônus resolvível, como alienação fiduciária ativa, hipoteca ou usufruto (tende a EM REVISÃO); BAIXO quando não houver ônus ativos (tende a LIBERADO). Mantenha 'rating' (AAA+ a D), 'risco' (x/10) e 'status' COERENTES com esse nível.\n" +
       "4.1. RISCOS ESPECÍFICOS PARA CRÉDITO COOPERATIVO (Agro e Urbano):\n" +
       "- Hiato Temporal (Validade): a DATA DE REFERÊNCIA de hoje é " + dataCorrenteStr + ". Compare-a com a data de emissão do documento e com a data do último ato registrado. Uma certidão de matrícula tem validade jurídica de ~30 dias; se o documento tiver mais de 30 dias de emissão, ou se o último ato for antigo (hiato de meses/anos sem atualização), emita um alerta CRÍTICO de 'Necessidade de Certidão Atualizada de Ônus e Ações' na lista de 'alertas', pois há risco de gravames ocultos não listados nesta cópia.\n" +
@@ -1824,7 +1869,8 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
       "- Georreferenciamento (GEO): identifique se há averbação (AV) de Georreferenciamento certificado pelo SIGEF/INCRA. Para imóveis rurais SEM GEO averbado, insira um alerta do tipo ATENÇÃO de pendência documental, pois o registro da garantia real hoje exige a descrição georreferenciada regularizada previamente.\n" +
       "- Benfeitorias Fantasmas: se a matrícula descrever o imóvel apenas como 'terreno', 'fração de terras' ou 'lote', sem nenhuma menção a prédios, casas, galpões ou silos, preencha o campo 'areaConstruida' estritamente como 'Não averbada (Terreno Nu)' e gere um alerta do tipo ATENÇÃO indicando a necessidade de averbação futura das benfeitorias existentes in loco.\n" +
       "5. Minuta (descrição legal): TRANSCREVA a descrição do imóvel EXATAMENTE como consta na matrícula, de forma LITERAL, integral e fiel (é exigência dos Cartórios de Registro que a descrição seja idêntica à da matrícula). Mantenha a mesma redação e a mesma ordem das confrontações e, OBRIGATORIAMENTE, preserve as medidas escritas POR EXTENSO entre parênteses, tal como no documento — ex.: 'na extensão de 204,85m (duzentos e quatro metros e oitenta e cinco centímetros)'. NÃO resuma, NÃO reescreva com suas palavras e NÃO omita os valores por extenso, as frações de centímetros ou os nomes/matrículas dos confrontantes. Reflita apenas as retificações de logradouro/área que já estejam averbadas, quando houver.\n" +
-      "6. Identificadores: se a matrícula citar o CNM (Código Nacional de Matrícula, padrão do ONR/SREI, formato tipo NNNNNN.N.NNNNNNN-NN), transcreva-o no campo 'cnm'; se citar o CNS (Código Nacional da Serventia — os 6 dígitos que identificam o cartório, frequentemente a parte inicial do CNM antes do primeiro ponto), transcreva-o no campo 'cns'; se citar CEP do imóvel, transcreva-o no campo 'cep'. NÃO invente CNM, CNS nem CEP específico se não constarem. Adicionalmente, preencha 'cepMunicipio' com o CEP GERAL do município (a localidade/sede, conforme os Correios) — este servirá de referência quando o CEP específico do imóvel não constar.\n\n" +
+      "6. Identificadores: se a matrícula citar o CNM (Código Nacional de Matrícula, padrão do ONR/SREI, formato tipo NNNNNN.N.NNNNNNN-NN), transcreva-o no campo 'cnm'; se citar o CNS (Código Nacional da Serventia — os 6 dígitos que identificam o cartório, frequentemente a parte inicial do CNM antes do primeiro ponto), transcreva-o no campo 'cns'; se citar CEP do imóvel, transcreva-o no campo 'cep'. NÃO invente CNM, CNS nem CEP específico se não constarem. Adicionalmente, preencha 'cepMunicipio' com o CEP GERAL do município (a localidade/sede, conforme os Correios) — este servirá de referência quando o CEP específico do imóvel não constar.\n" +
+      "6.1. Dados do registro e localização (para os contratos): extraia também, quando constarem, 'municipio' e 'uf' SEPARADOS (do cabeçalho ou da 'Comarca de ...'); 'livro' (ex.: '2 - Registro Geral', do 'LIVRO Nº 2 - REGISTRO GERAL'); 'folha' (a FLS. do cabeçalho, ex.: '01'); 'denominacao' (nome/local do imóvel: a Linha, Fazenda, Sítio ou Localidade onde se situa, ex.: 'Linha Mangueirão'); 'ccir' (o código CCIR do INCRA ISOLADO, do bloco 'INCRA sob nº ...', ex.: '857.092.058.610-4'); e 'nirf' como LISTA de strings (um ou mais NIRF do mesmo bloco INCRA, ex.: ['1.056.732-1','5.506.297-0'] — sempre lista, mesmo com um só). Mantenha a formatação dos números tal como no documento. Campo ausente: 'municipio'/'uf'/'livro'/'folha'/'denominacao'/'ccir' = 'Não informado'; 'nirf' = lista vazia [].\n\n" +
       "LEITURA DO DOCUMENTO (OCR): O documento pode chegar como PDF nativo, PDF digitalizado ou FOTOGRAFIA da matrícula (torta, com sombras, baixa resolução, carimbos ou trechos manuscritos). Faça a transcrição visual (OCR) integral, lendo todos os R- e AV- na ordem. NUNCA invente dados: se um campo estiver ilegível ou ausente, use 'Não identificado' e registre a ilegibilidade como alerta do tipo ATENÇÃO. Baseie-se estritamente no documento fornecido.";
 
     let prompt = "Faça a análise técnica jurídica profunda desta matrícula imobiliária (PDF, imagem ou transcrição) aplicando a metodologia de validação cruzada. Retorne ESTRITAMENTE um objeto JSON válido no formato abaixo, sem texto fora do JSON.\n\n" +
@@ -1846,6 +1892,13 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    \"cepMunicipio\": \"string (CEP geral do município/sede, conforme os Correios; referência para quando o CEP específico não constar)\",\n" +
                  "    \"cnm\": \"string (Código Nacional de Matrícula - CNM/ONR, SOMENTE se citado na matrícula; senão vazio)\",\n" +
                  "    \"cns\": \"string (Código Nacional da Serventia/CNS do cartório - normalmente 6 dígitos; SOMENTE se citado; senão vazio)\",\n" +
+                 "    \"municipio\": \"string (município do imóvel, isolado; senão 'Não informado')\",\n" +
+                 "    \"uf\": \"string (UF do imóvel, isolada; senão 'Não informado')\",\n" +
+                 "    \"livro\": \"string (livro do registro, ex.: '2 - Registro Geral'; senão 'Não informado')\",\n" +
+                 "    \"folha\": \"string (folha/FLS da matrícula, ex.: '01'; senão 'Não informado')\",\n" +
+                 "    \"denominacao\": \"string (nome/local do imóvel: Linha, Fazenda, Sítio, Localidade; senão 'Não informado')\",\n" +
+                 "    \"ccir\": \"string (código CCIR do INCRA isolado; senão 'Não informado')\",\n" +
+                 "    \"nirf\": [\"string\"],\n" +
                  "    \"area\": \"string (área TOTAL do terreno/imóvel = 100%; se não houver total explícito, some as áreas das frações dos proprietários. Nunca deixe vazio)\",\n" +
                  "    \"areaConstruida\": \"string (área construída/benfeitorias)\",\n" +
                  "    \"descricaoCurta\": \"string (resumo objetivo do imóvel)\",\n" +
@@ -1855,7 +1908,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "    ]\n" +
                  "  },\n" +
                  "  \"proprietarios\": [\n" +
-                 "    { \"nome\": \"string (SOMENTE proprietários ATUAIS)\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"descricaoArea\": \"string (descrição COMPLETA da área/fração deste proprietário: quantidade, localização/delimitação dentro do imóvel e registro de origem)\", \"estadoCivil\": \"string\", \"regimeCasamento\": \"string (comunhão universal|comunhão parcial|separação total|separação obrigatória|participação final nos aquestos|união estável|não se aplica)\", \"formaAquisicao\": \"string (compra e venda|doação|herança|partilha|adjudicação|usucapião|dação em pagamento|permuta|outra)\", \"validacaoTitularidade\": \"string (conclusão jurídica: comunicação/meação do cônjuge conforme o regime e a forma de aquisição, necessidade de outorga conjugal - art. 1.647 CC)\", \"status\": \"REGULAR|ATENÇÃO\" }\n" +
+                 "    { \"nome\": \"string\", \"documento\": \"string (CPF/CNPJ ou 'Não informado')\", \"participacao\": \"string (% e área)\", \"descricaoArea\": \"string (descrição COMPLETA da área/fração deste proprietário: quantidade, localização/delimitação dentro do imóvel e registro de origem)\", \"nacionalidade\": \"string (ou 'Não informado')\", \"profissao\": \"string (ou 'Não informado')\", \"rg\": { \"numero\": \"string (ou 'Não informado')\", \"orgaoEmissor\": \"string (ou 'Não informado')\" }, \"estadoCivil\": \"string (APENAS o estado civil: Casado|Solteiro|Viúvo|Divorciado...)\", \"regimeBens\": \"string (SEPARADO do estado civil: Comunhão Universal de Bens|Comunhão Parcial de Bens|Separação Total de Bens|...; use 'Comunhão Parcial de Bens (presumido)' se não expresso e adquirido na constância)\", \"regimeCasamento\": \"string (compatibilidade: mesmo conteúdo do regime, forma curta: comunhão universal|comunhão parcial|separação total|separação obrigatória|participação final nos aquestos|união estável|não se aplica)\", \"conjuge\": { \"nome\": \"string (ou 'Não informado')\", \"documento\": \"string (CPF do cônjuge ou 'Não informado')\" }, \"enderecoDomicilio\": \"string (domicílio do proprietário; ou 'Não informado')\", \"formaAquisicao\": \"string (compra e venda|doação|herança|partilha|adjudicação|usucapião|dação em pagamento|permuta|outra)\", \"origemAto\": \"string (ato que fundamenta a propriedade, ex.: 'R-5 (Prot. 114813, 07/07/2015)')\", \"validacaoTitularidade\": \"string (conclusão jurídica: comunicação/meação do cônjuge conforme o regime e a forma de aquisição, necessidade de outorga conjugal - art. 1.647 CC)\", \"vigente\": true, \"status\": \"REGULAR|ATENÇÃO\" }\n" +
                  "  ],\n" +
                  "  \"gravames\": [\n" +
                  "    { \"registro\": \"string (R-/AV-)\", \"tipo\": \"string\", \"credor\": \"string\", \"observacao\": \"string (vencimento/obs)\" }\n" +
@@ -1869,7 +1922,7 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
                  "  \"parecerConsolidado\": \"string (Laudo final de elegibilidade jurídica, incluindo a auditoria de área e as ressalvas de qualificação subjetiva, recomendando ou não a aceitação de garantia creditícia)\",\n" +
                  "  \"status\": \"LIBERADO|EM REVISÃO|REJEITADO\"\n" +
                  "}\n\n" +
-                 "Regras: 'proprietarios' contém APENAS os titulares ATUAIS do imóvel (o dono anterior vai só na 'cadeiaDominial'). gravames traz apenas ônus reais registrados; se não houver, retorne lista vazia e declare 'livre de ônus' no parecer. alertas traz avisos de risco/compliance (ex.: CPF faltante, divergência de área, ilegibilidade). Use 'Não identificado' para campos ausentes.\n\n" +
+                 "Regras: 'proprietarios' deve trazer os titulares VIGENTES (donos da área atual) PRIMEIRO, com 'vigente': true, e pode incluir também proprietários de frações antigas/desmembradas/vendidas com 'vigente': false (para rastreabilidade). O transmitente que não detém mais nada entra também na 'cadeiaDominial'. gravames traz apenas ônus reais registrados; se não houver, retorne lista vazia e declare 'livre de ônus' no parecer. alertas traz avisos de risco/compliance (ex.: CPF faltante, divergência de área, ilegibilidade). Use 'Não informado' (pessoas) ou 'Não identificado' (imóvel) para campos ausentes; NUNCA invente CPF/RG.\n\n" +
                  "NOME DO ARQUIVO: " + name + "\n" +
                  "CONTEÚDO DA MATRÍCULA:\n" + textInput;
                   
@@ -2028,19 +2081,42 @@ function processarMatriculaIA(fileBase64, fileName, textInput, metodo) {
         cepMunicipio: imovelSafe.cepMunicipio || "",
         cnm: imovelSafe.cnm || "",
         cns: imovelSafe.cns || "",
+        municipio: imovelSafe.municipio || "",
+        uf: imovelSafe.uf || "",
+        livro: imovelSafe.livro || "",
+        folha: imovelSafe.folha || "",
+        denominacao: imovelSafe.denominacao || "",
+        ccir: imovelSafe.ccir || "",
+        nirf: Array.isArray(imovelSafe.nirf) ? imovelSafe.nirf : (imovelSafe.nirf ? [String(imovelSafe.nirf)] : []),
         area: imovelSafe.area || "Não identificado",
         areaConstruida: imovelSafe.areaConstruida || "Não mensurada",
         descricaoCurta: imovelSafe.descricaoCurta || "Descrição não extraída do documento.",
         descricaoLegal: imovelSafe.descricaoLegal || "",
         confrontacoes: imovelSafe.confrontacoes || []
       },
-      proprietarios: apenasProprietariosAtuais(parsedData.proprietarios || []),
+      proprietarios: prepararProprietarios(parsedData.proprietarios || []),
       gravames: parsedData.gravames || [],
       alertas: parsedData.alertas || [],
       cadeiaDominial: parsedData.cadeiaDominial || [],
       parecerConsolidado: parsedData.parecerConsolidado || "Análise concluída sem parecer textual.",
       status: parsedData.status || "EM REVISÃO"
     };
+
+    // Preenchimentos derivados (sem inventar): município/UF a partir da comarca e
+    // CCIR a partir do campo cadastroIncra, quando o modelo não os trouxe isolados.
+    if (!finalResult.imovel.municipio || !finalResult.imovel.uf) {
+      const comarca = String(finalResult.imovel.comarca || '');
+      const mm = comarca.match(/^\s*(.+?)\s*[-\/]\s*([A-Za-z]{2})\s*$/);
+      if (mm) {
+        if (!finalResult.imovel.municipio) finalResult.imovel.municipio = mm[1].trim();
+        if (!finalResult.imovel.uf) finalResult.imovel.uf = mm[2].toUpperCase();
+      }
+    }
+    if (!finalResult.imovel.ccir) {
+      const incra = String(finalResult.imovel.cadastroIncra || '');
+      const cm = incra.match(/(\d{3}\.\d{3}\.\d{3}\.\d{3}-\d)/); // formato CCIR
+      if (cm) finalResult.imovel.ccir = cm[1];
+    }
 
     // Custo real deste processamento (tokens reais reportados pela API + câmbio ao vivo)
     finalResult.custo = calcularCusto(parsedRaw.usageMetadata, modeloUsado);
